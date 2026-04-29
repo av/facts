@@ -1,0 +1,44 @@
+# facts
+
+- the project is a CLI for fact-driven development with coding agents
+- facts works with a fact sheet, which is a flat list of validatable atomic facts
+
+## format
+
+### file
+- the fact sheet is named .facts and lives in the project root
+- the format is a valid subset of both YAML and Markdown
+
+### syntax
+- lines starting with # are section headings
+- sections are semantically meaningful and group related facts
+- heading depth maps to hierarchy
+- each fact is a YAML sequence item (- prefixed)
+- a fact can be a plain string or a mapping with label and command keys
+
+### validation
+- a fact with a command key is validated by running the command as a shell command
+- exit 0 means the fact holds, non-0 means it fails
+
+## cli
+
+- the CLI is named facts
+- written in Rust
+- distributed as a single compact binary
+
+## distribution
+
+### npm
+- published as an NPM package
+
+### pypi
+- published as a PyPI package
+
+### install.sh
+- install.sh downloads the binary from GitHub releases
+
+## skill
+
+- teaches coding agents how to install and use facts
+- installable via skills.sh
+- source is in ./skills/facts/
