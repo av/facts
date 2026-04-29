@@ -1,0 +1,40 @@
+# facts — fact-driven development for coding agents
+# This file IS the spec for the facts CLI, written in the facts format.
+# Lines starting with # are comments. Blank lines are ignored.
+# Each non-comment, non-blank line is one atomic fact.
+
+@invariant The project is a CLI tool named "facts"
+@invariant The CLI is written in Python
+@invariant The CLI is distributed as a single script with no external dependencies beyond the Python stdlib
+@invariant Facts are stored in a file named .facts in the project root
+@invariant The .facts file format is plain text — one fact per line
+@invariant Lines starting with # are comments and are ignored by the CLI
+@invariant Blank lines are ignored by the CLI
+@invariant Each fact line is a single atomic, validatable statement about the project
+@invariant Facts may be tagged with @tags inline — e.g. @milestone:v1 @invariant @transient
+@invariant Tags are prefixed with @ and separated by spaces before the fact text
+@invariant The @invariant tag means the fact must always hold — it never expires
+@invariant The @transient tag means the fact is temporary — it may be removed once no longer relevant
+@invariant The @milestone:<name> tag scopes a fact to a specific milestone — it only must hold during that milestone
+
+@milestone:v1 @invariant The CLI supports the command: facts check
+@milestone:v1 @invariant The CLI supports the command: facts add <text>
+@milestone:v1 @invariant The CLI supports the command: facts list
+@milestone:v1 @invariant The CLI supports the command: facts drift
+@milestone:v1 facts check reads .facts and reports the status of each fact (pass/fail/unknown)
+@milestone:v1 facts add appends a new fact line to .facts and commits the change
+@milestone:v1 facts list prints all facts with their tags, formatted for human reading
+@milestone:v1 facts drift shows only facts that are failing or unknown — i.e. code has drifted from intent
+@milestone:v1 The exit code of facts check is 0 if all facts pass, 1 if any fail or are unknown
+
+@milestone:v2 @transient facts check can run a validator command per fact if specified after a pipe: "fact text | validator_command"
+@milestone:v2 @transient facts add --tag <tag> allows adding a fact with a specific tag
+@milestone:v2 @transient facts remove <lineno> removes a fact by its line number
+@milestone:v2 @transient facts tag <lineno> +<tag> -<tag> adds or removes tags on an existing fact
+
+@invariant The .facts file is committed to git — facts are versioned alongside the code they describe
+@invariant Coding agents read .facts as the source of truth for project intent
+@invariant Coding agents propose changes to .facts when intent changes — add, edit, or remove facts
+@invariant The workflow is: write facts → agent implements → agent verifies code matches facts → drift surfaces as failing facts
+@invariant Facts without an explicit validator are checked by the coding agent's own judgment — status is "unknown" if no automated check exists
+@invariant A fact with a pipe validator (e.g. "uses pytest | grep -q pytest pyproject.toml") is checked by running the command after the pipe — exit 0 = pass, non-0 = fail
