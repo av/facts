@@ -102,8 +102,8 @@ fn run_in(opts: &AddOptions, root: &Path) -> Result<()> {
 fn add_to_section(sheet: &mut FactSheet, section_path: &str, fact: Fact) -> Result<()> {
     let parts: Vec<&str> = section_path.split('/').collect();
 
-    if parts.is_empty() {
-        anyhow::bail!("empty section path");
+    if parts.is_empty() || parts.iter().any(|p| p.trim().is_empty()) {
+        anyhow::bail!("section path cannot contain empty components");
     }
 
     // Navigate/create section hierarchy

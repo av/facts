@@ -1873,3 +1873,47 @@ fn edit_rejects_label_with_newline() {
         .failure()
         .stderr(predicate::str::contains("label cannot contain newlines"));
 }
+
+// ===========================================================================
+// input validation — empty section path components
+// ===========================================================================
+
+#[test]
+fn add_rejects_section_with_leading_slash() {
+    let dir = empty_project();
+    facts_cmd(&dir)
+        .args(["add", "test", "--section", "/a/b"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("section path cannot contain empty components"));
+}
+
+#[test]
+fn add_rejects_empty_section_path() {
+    let dir = empty_project();
+    facts_cmd(&dir)
+        .args(["add", "test", "--section", ""])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("section path cannot contain empty components"));
+}
+
+#[test]
+fn add_rejects_section_with_trailing_slash() {
+    let dir = empty_project();
+    facts_cmd(&dir)
+        .args(["add", "test", "--section", "a/b/"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("section path cannot contain empty components"));
+}
+
+#[test]
+fn add_rejects_section_with_double_slash() {
+    let dir = empty_project();
+    facts_cmd(&dir)
+        .args(["add", "test", "--section", "a//b"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("section path cannot contain empty components"));
+}
