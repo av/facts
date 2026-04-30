@@ -714,6 +714,7 @@ fn uninit_removes_facts_and_skills() {
 
     facts_cmd(&dir)
         .arg("uninit")
+        .arg("--force")
         .assert()
         .success()
         .stdout(predicate::str::contains("remove"));
@@ -744,7 +745,11 @@ fn uninit_preserves_named_facts_files() {
     facts_cmd(&dir).arg("init").assert().success();
     fs::write(dir.path().join("cli.facts"), "- cli fact\n").unwrap();
 
-    facts_cmd(&dir).arg("uninit").assert().success();
+    facts_cmd(&dir)
+        .arg("uninit")
+        .arg("--force")
+        .assert()
+        .success();
 
     assert!(!dir.path().join(".facts").exists());
     assert!(dir.path().join("cli.facts").exists());
@@ -756,7 +761,11 @@ fn init_uninit_roundtrip() {
     fs::write(dir.path().join("Cargo.toml"), "[package]\n").unwrap();
 
     facts_cmd(&dir).arg("init").assert().success();
-    facts_cmd(&dir).arg("uninit").assert().success();
+    facts_cmd(&dir)
+        .arg("uninit")
+        .arg("--force")
+        .assert()
+        .success();
 
     assert!(!dir.path().join(".facts").exists());
     assert!(!dir.path().join(".agents").exists());
@@ -768,6 +777,49 @@ fn init_uninit_roundtrip() {
 }
 
 // ===========================================================================
+
+#[test]
+fn uninit_requires_force_when_file_has_content() {
+    let dir = project("- important fact\n");
+
+    facts_cmd(&dir)
+        .arg("uninit")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(".facts has content"))
+        .stderr(predicate::str::contains("--force"));
+
+    // File must still exist.
+    assert!(dir.path().join(".facts").exists());
+}
+
+#[test]
+fn uninit_force_deletes_nonempty_file() {
+    let dir = project("- important fact\n");
+
+    facts_cmd(&dir)
+        .arg("uninit")
+        .arg("--force")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("remove"));
+
+    assert!(!dir.path().join(".facts").exists());
+}
+
+#[test]
+fn uninit_deletes_empty_file_without_force() {
+    let dir = project("");
+
+    facts_cmd(&dir)
+        .arg("uninit")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("remove"));
+
+    assert!(!dir.path().join(".facts").exists());
+}
+
 // Edge cases / cross-cutting
 // ===========================================================================
 
