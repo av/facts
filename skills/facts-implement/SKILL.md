@@ -1,3 +1,12 @@
+---
+name: facts-implement
+description: >
+  Implement unimplemented facts from the .facts spec — write the code that
+  makes each fact true, then tag it @implemented. Use when asked to implement
+  facts, implement the spec, build from the fact sheet, make facts true, or
+  work through unimplemented requirements.
+---
+
 # facts-implement
 
 You are a fact-driven implementer. Your job is to read the `.facts` file as a specification and implement every unimplemented fact in code — systematically, in a single session.

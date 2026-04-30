@@ -165,6 +165,16 @@
 - macOS amd64 and arm64
 - windows amd64
 
+## releasing
+
+- bump version in Cargo.toml, commit, push, then tag and push the tag
+- tags follow vX.Y.Z format (e.g. v0.2.0)
+- pushing a v* tag triggers the GitHub Actions release workflow
+- the workflow builds binaries for all 5 platform targets in parallel
+- binaries are packaged as tar.gz (unix) and zip (windows)
+- a GitHub release is created automatically with generated release notes
+- release artifacts are uploaded to the GitHub release
+
 ## distribution
 
 ### npm

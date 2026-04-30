@@ -1,212 +1,140 @@
+---
+name: facts
+description: >
+  Install and use the facts CLI — read, write, check, and edit .facts files.
+  Use when .facts files exist in the project, when the user mentions fact
+  sheets or the facts CLI, when facts needs to be installed, or when working
+  with fact-driven development workflows like discovering or implementing facts.
+---
+
 # facts
 
-You have access to `facts`, a CLI for fact-driven development.
+A CLI for fact-driven development. You use it to specify what must be true about a project, then validate that reality matches.
 
-## What are fact sheets?
+Project: https://github.com/av/facts
 
-A `.facts` file is a flat list of validatable atomic facts about a project. Each fact is a single truth statement that can optionally be verified by a shell command. Fact sheets live in the project root (the directory containing `.git`).
+## Installing
 
-The format is simultaneously valid Markdown and valid YAML (per-section). Lines are either headings (`#` prefixed), facts (`-` prefixed), or blank.
+If `facts` is not installed, install it with one of:
 
-## File conventions
+```bash
+curl -fsSL https://raw.githubusercontent.com/av/facts/main/install.sh | sh
+```
 
-- `.facts` is the default/main fact sheet
-- Additional sheets use semantic names (e.g. `cli.facts`, `api.facts`)
-- All `*.facts` files in the project root are discovered automatically
+```bash
+npm install -g @aspect-build/facts
+```
 
-## Fact formats
+```bash
+pip install facts-cli
+```
 
-Plain string fact:
+Verify with `facts --version`.
+
+## Core idea
+
+A `.facts` file is a flat list of atomic truth statements about a project. Each fact can optionally have a shell command that verifies it. The fact sheet serves as both specification (what should be true) and documentation (what is true) — the difference is just which direction you're working from.
+
 ```
 - the API returns JSON
-```
-
-Mapping fact with validation command:
-```
-- label: project is a Cargo project
-  command: test -f Cargo.toml
-```
-
-Full mapping with all keys:
-```
-- id: custom-id
-  label: tests pass
-  command: cargo test
-  tags: [ci, core]
-```
-
-Allowed mapping keys: `id`, `label`, `command`, `tags`. No others.
-
-## Tags
-
-Tags are `@word` tokens for filtering and categorisation.
-
-Inline syntax (plain strings only):
-```
-- the API is RESTful @api @core
-```
-
-Mapping syntax:
-```
+- label: project builds
+  command: cargo build
 - label: tests pass
   command: cargo test
   tags: [ci, core]
 ```
 
-Tags are stripped from the label before display and ID computation.
+That's the entire format. Plain strings for simple facts, mappings when you need a command, tags, or explicit ID. Allowed mapping keys: `id`, `label`, `command`, `tags` — nothing else.
 
-## Identity
+## Essential commands
 
-Every fact has a short ID (3+ characters) derived from a hash of its label. IDs are computed, not stored. An explicit `id` key in a mapping overrides the generated ID. IDs are stable as long as the label does not change.
-
-## Sections
-
-Headings create hierarchical sections addressable by path (e.g. `cli/subcommands`). Sections are created when you add facts to them and removed when their last fact is deleted.
-
-## Subcommands
-
-### `facts` (bare, no subcommand)
-
-Defaults to `facts list`. Shows all facts in file order.
-
-### `facts list`
-
-Show facts in file order with ID and section path.
-
+**See everything:**
 ```
 facts list
-facts list --section cli
+facts list --tags "not implemented"
 facts list --has-command
-facts list --manual
-facts list --tags "mvp and not blocked"
-facts list --file cli.facts
 ```
 
-Flags:
-- `--file` — filter by file name
-- `--section` — filter by section path
-- `--has-command` — only facts with a validation command
-- `--manual` — only facts without a validation command
-- `--tags` — boolean tag filter expression (supports `and`, `or`, `not`, parentheses)
-
-### `facts check`
-
-Run all command-facts and report pass/fail/manual. Lints all files first — check aborts early on lint errors.
-
+**Validate:**
 ```
 facts check
 facts check --tags "ci"
-facts check --timeout 30
 ```
+`check` is your primary feedback loop. It lints the files first (aborting on structural errors), then runs every command-fact and reports pass/fail/manual. Run it often. Exit 0 means all command-facts pass; manual facts don't affect the exit code.
 
-Flags:
-- `--tags` — boolean tag filter expression
-- `--timeout` — per-command timeout in seconds
-
-Exit code: 0 if all command-facts pass, non-zero if any fail. Manual facts do not affect the exit code.
-
-### `facts add <label>`
-
-Append a fact to a file and section.
-
-```
-facts add "the API returns JSON"
-facts add "tests pass" --command "cargo test" --section ci
-facts add "uses Express" --file api.facts --tags "core,api"
-facts add "custom entry" --id my-id
-```
-
-Flags:
-- `--section` — target section path (created if needed, supports nested paths like `cli/subcommands`)
-- `--file` — target `.facts` file (default: `.facts`, created if needed)
-- `--command` — validation command
-- `--id` — explicit ID override
-- `--tags` — comma-separated tags
-
-### `facts remove <id>`
-
-Remove a fact by its ID. Prints the removed fact. No confirmation prompt.
-
-```
-facts remove abc
-```
-
-### `facts edit <id>`
-
-Modify a fact by its ID.
-
-```
-facts edit abc --label "new label"
-facts edit abc --command "new command"
-facts edit abc --tags "tag1,tag2"
-facts edit abc --add-tag "implemented"
-facts edit abc --remove-tag "blocked"
-facts edit abc --new-id custom-id
-```
-
-Flags:
-- `--label` — new label text
-- `--command` — new validation command
-- `--new-id` — new explicit ID
-- `--tags` — new tags (comma-separated, replaces all existing tags)
-- `--add-tag` — add tags without removing existing ones (comma-separated)
-- `--remove-tag` — remove specific tags (comma-separated)
-
-`--tags` cannot be combined with `--add-tag` or `--remove-tag`.
-
-Plain string facts are promoted to mappings when they gain a command, id, or tags via edit.
-
-### `facts lint`
-
-Validate that fact sheets are parseable. Does not run validation commands.
-
-```
-facts lint
-facts lint --file cli.facts
-```
-
-Flags:
-- `--file` — lint a specific file instead of all `*.facts` files
-
-### `facts init`
-
-Scaffold a `.facts` file. Detects well-known framework/runtime combos (Cargo, Node.js, Python, Go, Ruby, Java, etc.) and generates starter facts with validation commands.
-
-```
-facts init
-```
-
-Refuses to overwrite an existing `.facts` file.
-
-## Common workflows
-
-### Start a new project with facts
-
-```
-facts init
-facts list
-facts check
-```
-
-### Add a new requirement
-
+**Add facts:**
 ```
 facts add "users can sign up" --section features/auth
-facts add "signup endpoint returns 201" --section features/auth --command "curl -s -o /dev/null -w '%{http_code}' localhost:3000/signup | grep 201"
+facts add "signup returns 201" --command "curl -s -o /dev/null -w '%{http_code}' localhost:3000/signup | grep 201" --section features/auth
 ```
 
-### Filter and review
+**Edit facts:**
+```
+facts edit <id> --add-tag "implemented"
+facts edit <id> --remove-tag "blocked"
+facts edit <id> --label "corrected statement"
+facts edit <id> --command "new check command"
+```
+Prefer `--add-tag` / `--remove-tag` over `--tags`. The latter replaces all tags silently — use it only when you intend a full replacement.
 
+**Remove facts:**
 ```
-facts list --tags "mvp"
-facts check --tags "mvp and not blocked"
-facts list --manual --section api
+facts remove <id>
 ```
 
-### Clean up
+**Scaffold a new project:**
+```
+facts init
+```
 
+Run `facts <command> --help` for the full flag reference.
+
+## How facts work
+
+**Files:** `.facts` is the default. Additional sheets use semantic names (`cli.facts`, `api.facts`). All `*.facts` files in the project root are discovered automatically.
+
+**Sections:** Markdown headings (`#`, `##`, etc.) create hierarchical sections addressable by path (e.g. `cli/subcommands`). Sections are created when you add to them and removed when their last fact is deleted.
+
+**Tags:** `@word` tokens for filtering. Inline for plain strings (`- some fact @mvp`), `tags:` key for mappings. Stripped from the label before display and ID hashing. Filter with boolean expressions: `--tags "mvp and not blocked"`.
+
+**IDs:** Every fact gets a short ID (3+ chars) derived from its label hash. Stable as long as the label doesn't change. Use `--id` or `--new-id` to override.
+
+**Validation:** Commands run via `$SHELL` (fallback `sh`) in the project root. Exit 0 = fact holds. Write commands that are fast and idempotent — they run on every check.
+
+## Writing good facts
+
+- **Atomic** — one truth per fact, independently verifiable
+- **Declarative** — state what is true, not what to do ("uses PostgreSQL" not "set up PostgreSQL")
+- **Stable** — shouldn't change with every commit ("tests pass" not "there are 47 tests")
+- **Verifiable** — add a command when a simple check exists; manual facts are fine for things that need judgment
+
+Good validation commands are fast, idempotent, and test one thing. Prefer `test -f`, `grep -q`, and short script checks over running full builds.
+
+## Agent workflows
+
+**Understand a project:**
 ```
-facts remove abc
-facts edit def --label "updated requirement"
-facts lint
+facts list                              # read the full spec
+facts check                             # see what holds and what doesn't
+facts list --manual                     # see what needs human/agent judgment
 ```
+
+**Track implementation progress:**
+```
+facts list --tags "not implemented"     # what's left to do
+facts edit <id> --add-tag "implemented" # mark done
+facts check                             # verify
+```
+
+**Maintain accuracy:**
+```
+facts check                             # find failing facts
+facts edit <id> --label "corrected"     # fix inaccurate facts
+facts remove <id>                       # remove obsolete facts
+facts add "new truth" --section foo     # add discovered truths
+```
+
+## Companion skills
+
+- **facts-discover** — scan the codebase and make the fact sheet match reality. Use when you need to bootstrap or update the fact sheet from existing code.
+- **facts-implement** — read the fact sheet as a spec and implement all unimplemented facts in code. Use when the fact sheet is ahead of the codebase.

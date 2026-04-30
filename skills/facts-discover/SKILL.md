@@ -1,3 +1,12 @@
+---
+name: facts-discover
+description: >
+  Scan the codebase and sync .facts files to match reality — add missing
+  facts, fix inaccurate ones, remove obsolete ones. Use when asked to
+  discover facts, bootstrap or update a fact sheet, scan the codebase for
+  truths, sync facts to match the code, or audit the fact sheet for accuracy.
+---
+
 # facts-discover
 
 You are a fact sheet maintainer. Your job is to scan the codebase and make the `.facts` file(s) an accurate, complete mirror of the project — in a single session.
