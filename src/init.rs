@@ -1,12 +1,29 @@
-/// The `init` subcommand — scaffold a .facts file with detected stack.
+/// The `init` subcommand — scaffold a .facts file and install agent skills.
 ///
-/// Detects well-known framework/runtime combos by checking for marker files
-/// in the project root, then generates initial facts for each detected stack.
+/// Detects well-known framework/runtime combos by checking for marker files,
+/// reading config files, and inspecting declared dependencies in the project
+/// root, then generates initial facts for each detected stack.
+///
+/// Skills are installed to `.agents/skills/` (agent-agnostic). If Claude Code
+/// is detected on the system, symlinks are created from `.claude/skills/`.
+///
+/// Idempotent: skips steps that are already done.
 
 use anyhow::Result;
 use std::path::Path;
 
 use crate::project;
+
+// Embedded skill content, baked into the binary at compile time.
+const FACTS_SKILL: &str = include_str!("../skills/facts/SKILL.md");
+const DISCOVER_SKILL: &str = include_str!("../skills/facts-discover/SKILL.md");
+const IMPLEMENT_SKILL: &str = include_str!("../skills/facts-implement/SKILL.md");
+
+const SKILLS: &[(&str, &str)] = &[
+    ("facts", FACTS_SKILL),
+    ("facts-discover", DISCOVER_SKILL),
+    ("facts-implement", IMPLEMENT_SKILL),
+];
 
 /// A detected project stack.
 #[derive(Debug, PartialEq)]
@@ -23,232 +40,677 @@ pub struct StackFact {
     pub command: Option<String>,
 }
 
-/// All known stack detectors.
-static DETECTORS: &[(&str, &str, &[(&str, Option<&str>)])] = &[
-    (
-        "Rust/Cargo",
-        "Cargo.toml",
-        &[
-            ("project uses Rust with Cargo", Some("test -f Cargo.toml")),
-            ("project compiles successfully", Some("cargo check")),
-            ("all tests pass", Some("cargo test --quiet")),
-            ("code is formatted", Some("cargo fmt --check")),
-        ],
-    ),
-    (
-        "Node.js",
-        "package.json",
-        &[
-            ("project uses Node.js", Some("test -f package.json")),
-            (
-                "dependencies are installed",
-                Some("test -d node_modules"),
-            ),
-            (
-                "project has a start script",
-                Some("node -e \"require('./package.json').scripts.start\""),
-            ),
-        ],
-    ),
-    (
-        "Python (pyproject.toml)",
-        "pyproject.toml",
-        &[
-            ("project uses Python", Some("test -f pyproject.toml")),
-            (
-                "project has a build system defined",
-                Some("python3 -c \"import tomllib; t=tomllib.load(open('pyproject.toml','rb')); assert 'build-system' in t\""),
-            ),
-            ("all tests pass", Some("python3 -m pytest --quiet")),
-        ],
-    ),
-    (
-        "Python (requirements.txt)",
-        "requirements.txt",
-        &[
-            (
-                "project uses Python with requirements.txt",
-                Some("test -f requirements.txt"),
-            ),
-            (
-                "dependencies are installed",
-                Some("pip3 check"),
-            ),
-            ("all tests pass", Some("python3 -m pytest --quiet")),
-        ],
-    ),
-    (
-        "Go",
-        "go.mod",
-        &[
-            ("project uses Go modules", Some("test -f go.mod")),
-            ("project builds successfully", Some("go build ./...")),
-            ("all tests pass", Some("go test ./...")),
-            ("code is formatted", Some("gofmt -l . | grep -c . | grep -q ^0$")),
-        ],
-    ),
-    (
-        "Ruby",
-        "Gemfile",
-        &[
-            ("project uses Ruby with Bundler", Some("test -f Gemfile")),
-            (
-                "dependencies are installed",
-                Some("bundle check"),
-            ),
-            ("all tests pass", Some("bundle exec rake test")),
-        ],
-    ),
-    (
-        "Java (Maven)",
-        "pom.xml",
-        &[
-            ("project uses Java with Maven", Some("test -f pom.xml")),
-            ("project compiles successfully", Some("mvn compile -q")),
-            ("all tests pass", Some("mvn test -q")),
-        ],
-    ),
-    (
-        "Java (Gradle)",
-        "build.gradle",
-        &[
-            ("project uses Java with Gradle", Some("test -f build.gradle")),
-            (
-                "project compiles successfully",
-                Some("./gradlew compileJava --quiet"),
-            ),
-            ("all tests pass", Some("./gradlew test --quiet")),
-        ],
-    ),
-    (
-        "Elixir",
-        "mix.exs",
-        &[
-            ("project uses Elixir with Mix", Some("test -f mix.exs")),
-            ("project compiles successfully", Some("mix compile --warnings-as-errors")),
-            ("all tests pass", Some("mix test")),
-        ],
-    ),
-    (
-        "PHP (Composer)",
-        "composer.json",
-        &[
-            ("project uses PHP with Composer", Some("test -f composer.json")),
-            ("dependencies are installed", Some("test -d vendor")),
-            ("all tests pass", Some("./vendor/bin/phpunit")),
-        ],
-    ),
-    (
-        "Swift",
-        "Package.swift",
-        &[
-            ("project uses Swift Package Manager", Some("test -f Package.swift")),
-            ("project builds successfully", Some("swift build")),
-            ("all tests pass", Some("swift test")),
-        ],
-    ),
-    (
-        "C# (.NET)",
-        "*.csproj",
-        &[
-            ("project uses .NET", Some("ls *.csproj >/dev/null 2>&1")),
-            ("project builds successfully", Some("dotnet build --nologo -q")),
-            ("all tests pass", Some("dotnet test --nologo -q")),
-        ],
-    ),
-];
+// ---------------------------------------------------------------------------
+// Entry point
+// ---------------------------------------------------------------------------
 
-/// Run the init subcommand (auto-detects project root).
 pub fn run() -> Result<()> {
     let root = project::find_project_root()?;
     run_in(&root)
 }
 
-/// Run the init subcommand in a given root directory.
 fn run_in(root: &Path) -> Result<()> {
     let facts_path = root.join(".facts");
 
     if facts_path.exists() {
-        anyhow::bail!(".facts already exists in {}", root.display());
+        println!("  skip  .facts (already exists)");
+    } else {
+        let stacks = detect_stacks(root);
+        let content = generate_facts_content(&stacks);
+        std::fs::write(&facts_path, &content)?;
+        if stacks.is_empty() {
+            println!("  create  .facts (no frameworks detected)");
+        } else {
+            let names: Vec<&str> = stacks.iter().map(|s| s.name).collect();
+            println!("  create  .facts (detected: {})", names.join(", "));
+        }
     }
 
-    let stacks = detect_stacks(root);
-    let content = generate_facts_content(&stacks);
-    std::fs::write(&facts_path, &content)?;
+    for (name, content) in SKILLS {
+        install_skill(root, name, content)?;
+    }
 
-    println!("created {}", facts_path.display());
-    if stacks.is_empty() {
-        println!("no known frameworks detected, scaffolded a minimal .facts file");
-    } else {
-        let names: Vec<&str> = stacks.iter().map(|s| s.name).collect();
-        println!("detected: {}", names.join(", "));
+    if is_claude_available(root) {
+        for (name, _) in SKILLS {
+            link_skill_for_claude(root, name)?;
+        }
     }
 
     Ok(())
 }
 
-/// Detect project stacks by checking for marker files.
-pub fn detect_stacks(root: &Path) -> Vec<DetectedStack> {
-    let mut stacks = Vec::new();
+// ---------------------------------------------------------------------------
+// Skill installation
+// ---------------------------------------------------------------------------
 
-    for (name, marker, facts) in DETECTORS {
-        // Handle glob-style markers like "*.csproj"
-        let found = if marker.contains('*') {
-            // Simple glob: check if any matching file exists
-            let pattern = marker.replace('*', "");
-            std::fs::read_dir(root)
-                .ok()
-                .map(|entries| {
-                    entries
-                        .filter_map(|e| e.ok())
-                        .any(|e| {
-                            e.file_name()
-                                .to_str()
-                                .is_some_and(|n| n.ends_with(&pattern))
-                        })
-                })
-                .unwrap_or(false)
+fn install_skill(root: &Path, name: &str, content: &str) -> Result<()> {
+    let skill_dir = root.join(".agents").join("skills").join(name);
+    let skill_path = skill_dir.join("SKILL.md");
+
+    if skill_path.exists() {
+        let existing = std::fs::read_to_string(&skill_path)?;
+        if existing == content {
+            println!("  skip  .agents/skills/{name}/SKILL.md (up to date)");
         } else {
-            root.join(marker).exists()
-        };
+            std::fs::write(&skill_path, content)?;
+            println!("  update  .agents/skills/{name}/SKILL.md");
+        }
+    } else {
+        std::fs::create_dir_all(&skill_dir)?;
+        std::fs::write(&skill_path, content)?;
+        println!("  create  .agents/skills/{name}/SKILL.md");
+    }
 
-        if found {
-            // Skip "Python (requirements.txt)" if pyproject.toml was already detected
-            if *marker == "requirements.txt"
-                && stacks.iter().any(|s: &DetectedStack| s.marker == "pyproject.toml")
-            {
-                continue;
-            }
+    Ok(())
+}
 
-            stacks.push(DetectedStack {
-                name,
-                marker,
-                facts: facts
-                    .iter()
-                    .map(|(label, cmd)| StackFact {
-                        label: label.to_string(),
-                        command: cmd.map(|c| c.to_string()),
-                    })
-                    .collect(),
-            });
+// ---------------------------------------------------------------------------
+// Claude symlinks
+// ---------------------------------------------------------------------------
+
+fn is_claude_available(root: &Path) -> bool {
+    if root.join(".claude").exists() {
+        return true;
+    }
+    if let Ok(home) = std::env::var("HOME") {
+        if Path::new(&home).join(".claude").exists() {
+            return true;
+        }
+    }
+    std::process::Command::new("which")
+        .arg("claude")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+#[cfg(unix)]
+fn link_skill_for_claude(root: &Path, name: &str) -> Result<()> {
+    let link_dir = root.join(".claude").join("skills");
+    let link_path = link_dir.join(name);
+    // Relative from .claude/skills/ up to project root, then into .agents/skills/<name>
+    let target = Path::new("..").join("..").join(".agents").join("skills").join(name);
+
+    if link_path.is_symlink() {
+        let current = std::fs::read_link(&link_path)?;
+        if current == target {
+            println!("  skip  .claude/skills/{name} (link up to date)");
+            return Ok(());
+        }
+        std::fs::remove_file(&link_path)?;
+    } else if link_path.exists() {
+        // Real dir/file — don't overwrite user content.
+        println!("  skip  .claude/skills/{name} (exists, not a symlink)");
+        return Ok(());
+    }
+
+    std::fs::create_dir_all(&link_dir)?;
+    std::os::unix::fs::symlink(&target, &link_path)?;
+    println!("  link  .claude/skills/{name} -> .agents/skills/{name}");
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn link_skill_for_claude(_root: &Path, name: &str) -> Result<()> {
+    println!("  skip  .claude/skills/{name} (symlinks not supported on this platform)");
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Stack detection
+// ---------------------------------------------------------------------------
+
+pub fn detect_stacks(root: &Path) -> Vec<DetectedStack> {
+    let detectors: &[fn(&Path) -> Option<DetectedStack>] = &[
+        detect_deno,
+        detect_node,
+        detect_rust,
+        detect_python,
+        detect_go,
+        detect_ruby,
+        detect_java_maven,
+        detect_java_gradle,
+        detect_elixir,
+        detect_php,
+        detect_swift,
+        detect_dotnet,
+        detect_zig,
+        detect_gleam,
+        detect_dart,
+        detect_docker,
+        detect_terraform,
+    ];
+
+    detectors.iter().filter_map(|d| d(root)).collect()
+}
+
+// ---------------------------------------------------------------------------
+// Individual detectors
+// ---------------------------------------------------------------------------
+
+fn detect_deno(root: &Path) -> Option<DetectedStack> {
+    let config_name = if file_exists(root, "deno.json") {
+        "deno.json"
+    } else if file_exists(root, "deno.jsonc") {
+        "deno.jsonc"
+    } else {
+        return None;
+    };
+
+    let content = read_file(root, config_name).unwrap_or_default();
+    let mut facts = Vec::new();
+
+    if json_section_has_key(&content, "tasks", "build") {
+        facts.push(sfact("project builds successfully", "deno task build"));
+    }
+    if json_section_has_key(&content, "tasks", "test") {
+        facts.push(sfact("all tests pass", "deno task test"));
+    } else {
+        facts.push(sfact("all tests pass", "deno test"));
+    }
+    if json_section_has_key(&content, "tasks", "lint") {
+        facts.push(sfact("code passes linting", "deno task lint"));
+    } else {
+        facts.push(sfact("code passes linting", "deno lint"));
+    }
+    facts.push(sfact("code is formatted", "deno fmt --check"));
+
+    Some(DetectedStack {
+        name: "Deno",
+        marker: "deno.json",
+        facts,
+    })
+}
+
+fn detect_node(root: &Path) -> Option<DetectedStack> {
+    let content = read_file(root, "package.json")?;
+
+    // Deno projects may also have package.json — defer to the Deno detector.
+    if file_exists(root, "deno.json") || file_exists(root, "deno.jsonc") {
+        return None;
+    }
+
+    let pm = detect_js_pm(root);
+
+    let name = if json_has_dep(&content, "next") {
+        "Next.js"
+    } else if json_has_dep(&content, "nuxt") {
+        "Nuxt"
+    } else if json_has_dep(&content, "@sveltejs/kit") {
+        "SvelteKit"
+    } else if json_has_dep(&content, "@remix-run/node") || json_has_dep(&content, "remix") {
+        "Remix"
+    } else {
+        "Node.js"
+    };
+
+    let mut facts = Vec::new();
+
+    // Build
+    if json_has_script(&content, "build") {
+        facts.push(sfact("project builds successfully", &pm.run("build")));
+    }
+
+    // Test: script first, then dep fallback
+    if json_has_script(&content, "test") {
+        facts.push(sfact("all tests pass", pm.test()));
+    } else if json_has_dep(&content, "vitest") {
+        facts.push(sfact("all tests pass", &pm.exec("vitest run")));
+    } else if json_has_dep(&content, "jest") {
+        facts.push(sfact("all tests pass", &pm.exec("jest")));
+    } else if json_has_dep(&content, "mocha") {
+        facts.push(sfact("all tests pass", &pm.exec("mocha")));
+    }
+
+    // Lint: script first, then dep fallback
+    if json_has_script(&content, "lint") {
+        facts.push(sfact("code passes linting", &pm.run("lint")));
+    } else if json_has_dep(&content, "@biomejs/biome") {
+        facts.push(sfact("code passes linting", &pm.exec("biome check")));
+    } else if json_has_dep(&content, "eslint") {
+        facts.push(sfact("code passes linting", &pm.exec("eslint .")));
+    }
+
+    // Typecheck: script first, then dep fallback
+    if json_has_dep(&content, "typescript") {
+        if json_has_script(&content, "typecheck") {
+            facts.push(sfact("type checking passes", &pm.run("typecheck")));
+        } else if json_has_script(&content, "type-check") {
+            facts.push(sfact("type checking passes", &pm.run("type-check")));
+        } else if json_has_script(&content, "types") {
+            facts.push(sfact("type checking passes", &pm.run("types")));
+        } else {
+            facts.push(sfact("type checking passes", &pm.exec("tsc --noEmit")));
         }
     }
 
-    stacks
+    // Format: script first, then dep fallback
+    if json_has_script(&content, "format:check") {
+        facts.push(sfact("code is formatted", &pm.run("format:check")));
+    } else if json_has_dep(&content, "prettier") {
+        facts.push(sfact("code is formatted", &pm.exec("prettier --check .")));
+    }
+
+    if facts.is_empty() {
+        facts.push(StackFact {
+            label: format!("project uses {name}"),
+            command: Some("test -f package.json".into()),
+        });
+    }
+
+    Some(DetectedStack {
+        name,
+        marker: "package.json",
+        facts,
+    })
 }
 
-/// Generate .facts file content from detected stacks.
+fn detect_rust(root: &Path) -> Option<DetectedStack> {
+    if !file_exists(root, "Cargo.toml") {
+        return None;
+    }
+
+    let mut facts = vec![
+        sfact("project compiles successfully", "cargo check"),
+        sfact("all tests pass", "cargo test --quiet"),
+        sfact("code is formatted", "cargo fmt --check"),
+    ];
+
+    if file_exists(root, "clippy.toml") || file_exists(root, ".clippy.toml") {
+        facts.push(sfact("clippy passes", "cargo clippy -- -D warnings"));
+    }
+
+    Some(DetectedStack {
+        name: "Rust/Cargo",
+        marker: "Cargo.toml",
+        facts,
+    })
+}
+
+fn detect_python(root: &Path) -> Option<DetectedStack> {
+    if let Some(pyproject) = read_file(root, "pyproject.toml") {
+        return Some(detect_python_pyproject(root, &pyproject));
+    }
+
+    if file_exists(root, "requirements.txt") {
+        return Some(detect_python_requirements(root));
+    }
+
+    None
+}
+
+fn detect_python_pyproject(root: &Path, pyproject: &str) -> DetectedStack {
+    let runner = detect_py_runner(root, pyproject);
+    let mut facts = Vec::new();
+
+    // Test: config first, then dep fallback
+    if toml_has_section(pyproject, "tool.pytest")
+        || file_exists(root, "conftest.py")
+        || file_exists(root, "pytest.ini")
+        || dep_in_pyproject(pyproject, "pytest")
+    {
+        facts.push(sfact("all tests pass", &runner.cmd("pytest --quiet")));
+    }
+
+    // Lint: config first, then dep fallback
+    let has_ruff = toml_has_section(pyproject, "tool.ruff")
+        || file_exists(root, "ruff.toml")
+        || file_exists(root, ".ruff.toml")
+        || dep_in_pyproject(pyproject, "ruff");
+
+    if has_ruff {
+        facts.push(sfact("code passes linting", &runner.cmd("ruff check .")));
+
+        if toml_has_section(pyproject, "tool.ruff.format") {
+            facts.push(sfact(
+                "code is formatted",
+                &runner.cmd("ruff format --check ."),
+            ));
+        }
+    } else if toml_has_section(pyproject, "tool.flake8")
+        || dep_in_pyproject(pyproject, "flake8")
+    {
+        facts.push(sfact("code passes linting", &runner.cmd("flake8")));
+    }
+
+    // Type checking: config first, then dep fallback
+    if toml_has_section(pyproject, "tool.mypy")
+        || file_exists(root, "mypy.ini")
+        || dep_in_pyproject(pyproject, "mypy")
+    {
+        facts.push(sfact("type checking passes", &runner.cmd("mypy .")));
+    } else if toml_has_section(pyproject, "tool.pyright")
+        || file_exists(root, "pyrightconfig.json")
+        || dep_in_pyproject(pyproject, "pyright")
+    {
+        facts.push(sfact("type checking passes", &runner.cmd("pyright")));
+    }
+
+    // Formatting (black, only if ruff format not already added)
+    if !toml_has_section(pyproject, "tool.ruff.format")
+        && (toml_has_section(pyproject, "tool.black") || dep_in_pyproject(pyproject, "black"))
+    {
+        facts.push(sfact(
+            "code is formatted",
+            &runner.cmd("black --check ."),
+        ));
+    }
+
+    if facts.is_empty() {
+        facts.push(StackFact {
+            label: "project uses Python".into(),
+            command: Some("test -f pyproject.toml".into()),
+        });
+    }
+
+    DetectedStack {
+        name: "Python (pyproject.toml)",
+        marker: "pyproject.toml",
+        facts,
+    }
+}
+
+fn detect_python_requirements(root: &Path) -> DetectedStack {
+    let reqs = read_file(root, "requirements.txt").unwrap_or_default();
+    let mut facts = Vec::new();
+
+    // Test
+    if file_exists(root, "conftest.py")
+        || file_exists(root, "pytest.ini")
+        || dep_in_requirements(&reqs, "pytest")
+    {
+        facts.push(sfact("all tests pass", "python -m pytest --quiet"));
+    }
+
+    // Lint
+    if file_exists(root, "ruff.toml")
+        || file_exists(root, ".ruff.toml")
+        || dep_in_requirements(&reqs, "ruff")
+    {
+        facts.push(sfact("code passes linting", "ruff check ."));
+    } else if dep_in_requirements(&reqs, "flake8") {
+        facts.push(sfact("code passes linting", "flake8"));
+    }
+
+    // Type checking
+    if file_exists(root, "mypy.ini")
+        || file_exists(root, ".mypy.ini")
+        || dep_in_requirements(&reqs, "mypy")
+    {
+        facts.push(sfact("type checking passes", "mypy ."));
+    } else if dep_in_requirements(&reqs, "pyright") {
+        facts.push(sfact("type checking passes", "pyright"));
+    }
+
+    // Format
+    if dep_in_requirements(&reqs, "black") {
+        facts.push(sfact("code is formatted", "black --check ."));
+    }
+
+    if facts.is_empty() {
+        facts.push(StackFact {
+            label: "project uses Python".into(),
+            command: Some("test -f requirements.txt".into()),
+        });
+    }
+
+    DetectedStack {
+        name: "Python (requirements.txt)",
+        marker: "requirements.txt",
+        facts,
+    }
+}
+
+fn detect_go(root: &Path) -> Option<DetectedStack> {
+    if !file_exists(root, "go.mod") {
+        return None;
+    }
+
+    let mut facts = vec![
+        sfact("project builds successfully", "go build ./..."),
+        sfact("all tests pass", "go test ./..."),
+        sfact("code is formatted", "test -z \"$(gofmt -l .)\""),
+    ];
+
+    if file_exists(root, ".golangci.yml")
+        || file_exists(root, ".golangci.yaml")
+        || file_exists(root, ".golangci.toml")
+    {
+        facts.push(sfact("linter passes", "golangci-lint run"));
+    }
+
+    Some(DetectedStack {
+        name: "Go",
+        marker: "go.mod",
+        facts,
+    })
+}
+
+fn detect_ruby(root: &Path) -> Option<DetectedStack> {
+    if !file_exists(root, "Gemfile") {
+        return None;
+    }
+
+    let mut facts = vec![sfact("dependencies are installed", "bundle check")];
+
+    if file_exists(root, "Rakefile") {
+        facts.push(sfact("all tests pass", "bundle exec rake test"));
+    } else if root.join("spec").is_dir() {
+        facts.push(sfact("all tests pass", "bundle exec rspec"));
+    }
+
+    if file_exists(root, ".rubocop.yml") {
+        facts.push(sfact("code passes linting", "bundle exec rubocop"));
+    }
+
+    Some(DetectedStack {
+        name: "Ruby",
+        marker: "Gemfile",
+        facts,
+    })
+}
+
+fn detect_java_maven(root: &Path) -> Option<DetectedStack> {
+    if !file_exists(root, "pom.xml") {
+        return None;
+    }
+    Some(DetectedStack {
+        name: "Java (Maven)",
+        marker: "pom.xml",
+        facts: vec![
+            sfact("project compiles successfully", "mvn compile -q"),
+            sfact("all tests pass", "mvn test -q"),
+        ],
+    })
+}
+
+fn detect_java_gradle(root: &Path) -> Option<DetectedStack> {
+    if !file_exists(root, "build.gradle") && !file_exists(root, "build.gradle.kts") {
+        return None;
+    }
+    Some(DetectedStack {
+        name: "Java (Gradle)",
+        marker: "build.gradle",
+        facts: vec![
+            sfact(
+                "project compiles successfully",
+                "./gradlew compileJava --quiet",
+            ),
+            sfact("all tests pass", "./gradlew test --quiet"),
+        ],
+    })
+}
+
+fn detect_elixir(root: &Path) -> Option<DetectedStack> {
+    if !file_exists(root, "mix.exs") {
+        return None;
+    }
+    Some(DetectedStack {
+        name: "Elixir",
+        marker: "mix.exs",
+        facts: vec![
+            sfact(
+                "project compiles successfully",
+                "mix compile --warnings-as-errors",
+            ),
+            sfact("all tests pass", "mix test"),
+        ],
+    })
+}
+
+fn detect_php(root: &Path) -> Option<DetectedStack> {
+    if !file_exists(root, "composer.json") {
+        return None;
+    }
+
+    let content = read_file(root, "composer.json").unwrap_or_default();
+    let mut facts = vec![sfact("dependencies are installed", "test -d vendor")];
+
+    if json_has_script(&content, "test") {
+        facts.push(sfact("all tests pass", "composer test"));
+    } else if file_exists(root, "phpunit.xml") || file_exists(root, "phpunit.xml.dist") {
+        facts.push(sfact("all tests pass", "./vendor/bin/phpunit"));
+    }
+
+    if json_has_script(&content, "lint") {
+        facts.push(sfact("code passes linting", "composer lint"));
+    }
+
+    Some(DetectedStack {
+        name: "PHP (Composer)",
+        marker: "composer.json",
+        facts,
+    })
+}
+
+fn detect_swift(root: &Path) -> Option<DetectedStack> {
+    if !file_exists(root, "Package.swift") {
+        return None;
+    }
+    Some(DetectedStack {
+        name: "Swift",
+        marker: "Package.swift",
+        facts: vec![
+            sfact("project builds successfully", "swift build"),
+            sfact("all tests pass", "swift test"),
+        ],
+    })
+}
+
+fn detect_dotnet(root: &Path) -> Option<DetectedStack> {
+    if !has_glob(root, ".csproj") {
+        return None;
+    }
+    Some(DetectedStack {
+        name: "C# (.NET)",
+        marker: "*.csproj",
+        facts: vec![
+            sfact("project builds successfully", "dotnet build --nologo -q"),
+            sfact("all tests pass", "dotnet test --nologo -q"),
+        ],
+    })
+}
+
+fn detect_zig(root: &Path) -> Option<DetectedStack> {
+    if !file_exists(root, "build.zig") {
+        return None;
+    }
+    Some(DetectedStack {
+        name: "Zig",
+        marker: "build.zig",
+        facts: vec![
+            sfact("project builds successfully", "zig build"),
+            sfact("all tests pass", "zig build test"),
+        ],
+    })
+}
+
+fn detect_gleam(root: &Path) -> Option<DetectedStack> {
+    if !file_exists(root, "gleam.toml") {
+        return None;
+    }
+    Some(DetectedStack {
+        name: "Gleam",
+        marker: "gleam.toml",
+        facts: vec![
+            sfact("project builds successfully", "gleam build"),
+            sfact("all tests pass", "gleam test"),
+        ],
+    })
+}
+
+fn detect_dart(root: &Path) -> Option<DetectedStack> {
+    if !file_exists(root, "pubspec.yaml") {
+        return None;
+    }
+
+    let is_flutter = file_exists(root, "lib/main.dart")
+        || read_file(root, "pubspec.yaml").map_or(false, |c| c.contains("flutter:"));
+
+    if is_flutter {
+        Some(DetectedStack {
+            name: "Flutter",
+            marker: "pubspec.yaml",
+            facts: vec![
+                sfact("all tests pass", "flutter test"),
+                sfact("code passes analysis", "flutter analyze"),
+            ],
+        })
+    } else {
+        Some(DetectedStack {
+            name: "Dart",
+            marker: "pubspec.yaml",
+            facts: vec![
+                sfact("all tests pass", "dart test"),
+                sfact("code passes analysis", "dart analyze"),
+            ],
+        })
+    }
+}
+
+fn detect_docker(root: &Path) -> Option<DetectedStack> {
+    if !file_exists(root, "Dockerfile") {
+        return None;
+    }
+    Some(DetectedStack {
+        name: "Docker",
+        marker: "Dockerfile",
+        facts: vec![sfact(
+            "Docker image builds",
+            "docker build -t facts-check .",
+        )],
+    })
+}
+
+fn detect_terraform(root: &Path) -> Option<DetectedStack> {
+    if !has_glob(root, ".tf") {
+        return None;
+    }
+    Some(DetectedStack {
+        name: "Terraform",
+        marker: "*.tf",
+        facts: vec![
+            sfact("Terraform configuration is valid", "terraform validate"),
+            sfact("Terraform is formatted", "terraform fmt -check"),
+        ],
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Content generation
+// ---------------------------------------------------------------------------
+
 pub fn generate_facts_content(stacks: &[DetectedStack]) -> String {
     let mut out = String::new();
 
     if stacks.is_empty() {
-        // Minimal scaffold
         out.push_str("# project\n\n");
         out.push_str("- project is set up and ready for development\n");
         return out;
     }
 
-    // Project header from the first detected stack
     out.push_str("# project\n");
 
     for stack in stacks {
@@ -264,6 +726,241 @@ pub fn generate_facts_content(stacks: &[DetectedStack]) -> String {
 
     out
 }
+
+// ---------------------------------------------------------------------------
+// JS package manager detection
+// ---------------------------------------------------------------------------
+
+enum JsPm {
+    Npm,
+    Yarn,
+    Pnpm,
+    Bun,
+}
+
+impl JsPm {
+    fn run(&self, script: &str) -> String {
+        match self {
+            JsPm::Npm => format!("npm run {script}"),
+            JsPm::Yarn => format!("yarn {script}"),
+            JsPm::Pnpm => format!("pnpm run {script}"),
+            JsPm::Bun => format!("bun run {script}"),
+        }
+    }
+
+    fn test(&self) -> &'static str {
+        match self {
+            JsPm::Npm => "npm test",
+            JsPm::Yarn => "yarn test",
+            JsPm::Pnpm => "pnpm test",
+            JsPm::Bun => "bun test",
+        }
+    }
+
+    fn exec(&self, bin: &str) -> String {
+        match self {
+            JsPm::Npm => format!("npx {bin}"),
+            JsPm::Yarn => format!("yarn {bin}"),
+            JsPm::Pnpm => format!("pnpm exec {bin}"),
+            JsPm::Bun => format!("bunx {bin}"),
+        }
+    }
+}
+
+fn detect_js_pm(root: &Path) -> JsPm {
+    if file_exists(root, "pnpm-lock.yaml") {
+        JsPm::Pnpm
+    } else if file_exists(root, "yarn.lock") {
+        JsPm::Yarn
+    } else if file_exists(root, "bun.lockb") || file_exists(root, "bun.lock") {
+        JsPm::Bun
+    } else {
+        JsPm::Npm
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Python runner detection
+// ---------------------------------------------------------------------------
+
+enum PyRunner {
+    Poetry,
+    Pdm,
+    Uv,
+    Direct,
+}
+
+impl PyRunner {
+    fn cmd(&self, tool: &str) -> String {
+        match self {
+            PyRunner::Poetry => format!("poetry run {tool}"),
+            PyRunner::Pdm => format!("pdm run {tool}"),
+            PyRunner::Uv => format!("uv run {tool}"),
+            PyRunner::Direct => tool.to_string(),
+        }
+    }
+}
+
+fn detect_py_runner(root: &Path, pyproject: &str) -> PyRunner {
+    if file_exists(root, "poetry.lock") || toml_has_section(pyproject, "tool.poetry") {
+        PyRunner::Poetry
+    } else if file_exists(root, "pdm.lock") {
+        PyRunner::Pdm
+    } else if file_exists(root, "uv.lock") {
+        PyRunner::Uv
+    } else {
+        PyRunner::Direct
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+fn read_file(root: &Path, name: &str) -> Option<String> {
+    std::fs::read_to_string(root.join(name)).ok()
+}
+
+fn file_exists(root: &Path, name: &str) -> bool {
+    root.join(name).exists()
+}
+
+fn has_glob(root: &Path, suffix: &str) -> bool {
+    std::fs::read_dir(root)
+        .ok()
+        .map(|entries| {
+            entries
+                .filter_map(|e| e.ok())
+                .any(|e| e.file_name().to_str().is_some_and(|n| n.ends_with(suffix)))
+        })
+        .unwrap_or(false)
+}
+
+fn sfact(label: &str, command: &str) -> StackFact {
+    StackFact {
+        label: label.to_string(),
+        command: Some(command.to_string()),
+    }
+}
+
+/// Check if JSON content has a key within a named object section.
+///
+/// Scans for `"section": { ... }` and checks if `"key"` appears inside.
+/// Handles nested braces and skips false matches (string values, nested keys).
+fn json_section_has_key(content: &str, section: &str, key: &str) -> bool {
+    let section_pat = format!("\"{}\"", section);
+    let key_pat = format!("\"{}\"", key);
+
+    let mut search_from = 0;
+    while let Some(pos) = content[search_from..].find(&section_pat) {
+        let abs_pos = search_from + pos;
+        let after = &content[abs_pos + section_pat.len()..];
+
+        let trimmed = after.trim_start();
+        if !trimmed.starts_with(':') {
+            search_from = abs_pos + section_pat.len();
+            continue;
+        }
+        let after_colon = trimmed[1..].trim_start();
+
+        if !after_colon.starts_with('{') {
+            search_from = abs_pos + section_pat.len();
+            continue;
+        }
+
+        // Found "section": { ... } — scan for matching brace.
+        let mut depth = 0;
+        for (i, ch) in after_colon.char_indices() {
+            match ch {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return after_colon[..i].contains(&key_pat);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        search_from = abs_pos + section_pat.len();
+    }
+    false
+}
+
+fn json_has_script(content: &str, script: &str) -> bool {
+    json_section_has_key(content, "scripts", script)
+}
+
+fn json_has_dep(content: &str, dep: &str) -> bool {
+    json_section_has_key(content, "dependencies", dep)
+        || json_section_has_key(content, "devDependencies", dep)
+}
+
+/// Check if TOML content has a section header matching `[section]` or `[section.*]`.
+fn toml_has_section(content: &str, section: &str) -> bool {
+    let exact = format!("[{}]", section);
+    let prefix = format!("[{}.", section);
+    content.lines().any(|line| {
+        let t = line.trim();
+        t == exact || t.starts_with(&prefix)
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Dependency detection helpers
+// ---------------------------------------------------------------------------
+
+/// Check if a dependency line matches a package name.
+/// Handles version specifiers: `pkg`, `pkg>=1.0`, `pkg[extra]`, `pkg ==2`, etc.
+fn dep_line_matches(line: &str, dep: &str) -> bool {
+    if !line.starts_with(dep) {
+        return false;
+    }
+    if line.len() == dep.len() {
+        return true;
+    }
+    matches!(
+        line.as_bytes()[dep.len()],
+        b'>' | b'<' | b'=' | b'!' | b'~' | b'[' | b' ' | b';'
+    )
+}
+
+/// Check if a pyproject.toml mentions a dependency anywhere in its dep arrays.
+fn dep_in_pyproject(content: &str, dep: &str) -> bool {
+    content.lines().any(|line| {
+        let trimmed = line
+            .trim()
+            .trim_start_matches('-')
+            .trim()
+            .trim_end_matches(',')
+            .trim()
+            .trim_matches('"')
+            .trim_matches('\'');
+        dep_line_matches(trimmed, dep)
+    })
+}
+
+/// Check if a requirements.txt file lists a dependency.
+fn dep_in_requirements(content: &str, dep: &str) -> bool {
+    content.lines().any(|line| {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') || trimmed.starts_with('-') {
+            return false;
+        }
+        dep_line_matches(trimmed, dep)
+    })
+}
+
+/// Test-only entry point that skips project root detection.
+#[cfg(test)]
+pub fn run_test_init(root: &Path) -> Result<()> {
+    run_in(root)
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
@@ -281,6 +978,17 @@ mod tests {
     }
 
     #[test]
+    fn test_detect_cargo_with_clippy() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("Cargo.toml"), "[package]\nname = \"test\"\n").unwrap();
+        std::fs::write(dir.path().join("clippy.toml"), "").unwrap();
+
+        let stacks = detect_stacks(dir.path());
+        assert_eq!(stacks.len(), 1);
+        assert!(stacks[0].facts.iter().any(|f| f.label == "clippy passes"));
+    }
+
+    #[test]
     fn test_detect_node() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("package.json"), "{}").unwrap();
@@ -291,13 +999,333 @@ mod tests {
     }
 
     #[test]
+    fn test_detect_node_with_scripts() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("package.json"),
+            r#"{"scripts":{"test":"jest","lint":"eslint .","build":"tsc"}}"#,
+        )
+        .unwrap();
+
+        let stacks = detect_stacks(dir.path());
+        assert_eq!(stacks.len(), 1);
+        assert_eq!(stacks[0].name, "Node.js");
+        assert!(stacks[0].facts.iter().any(|f| f.label == "all tests pass"));
+        assert!(stacks[0]
+            .facts
+            .iter()
+            .any(|f| f.label == "code passes linting"));
+        assert!(stacks[0]
+            .facts
+            .iter()
+            .any(|f| f.label == "project builds successfully"));
+    }
+
+    #[test]
+    fn test_detect_node_dep_fallback_test() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("package.json"),
+            r#"{"devDependencies":{"vitest":"1.0.0"}}"#,
+        )
+        .unwrap();
+
+        let stacks = detect_stacks(dir.path());
+        let test_fact = stacks[0]
+            .facts
+            .iter()
+            .find(|f| f.label == "all tests pass")
+            .unwrap();
+        assert_eq!(test_fact.command.as_deref(), Some("npx vitest run"));
+    }
+
+    #[test]
+    fn test_detect_node_dep_fallback_lint() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("package.json"),
+            r#"{"devDependencies":{"eslint":"9.0.0"}}"#,
+        )
+        .unwrap();
+
+        let stacks = detect_stacks(dir.path());
+        let lint_fact = stacks[0]
+            .facts
+            .iter()
+            .find(|f| f.label == "code passes linting")
+            .unwrap();
+        assert_eq!(lint_fact.command.as_deref(), Some("npx eslint ."));
+    }
+
+    #[test]
+    fn test_detect_node_dep_fallback_typescript() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("package.json"),
+            r#"{"devDependencies":{"typescript":"5.0.0"}}"#,
+        )
+        .unwrap();
+
+        let stacks = detect_stacks(dir.path());
+        let tc_fact = stacks[0]
+            .facts
+            .iter()
+            .find(|f| f.label == "type checking passes")
+            .unwrap();
+        assert_eq!(tc_fact.command.as_deref(), Some("npx tsc --noEmit"));
+    }
+
+    #[test]
+    fn test_detect_node_dep_fallback_prettier() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("package.json"),
+            r#"{"devDependencies":{"prettier":"3.0.0"}}"#,
+        )
+        .unwrap();
+
+        let stacks = detect_stacks(dir.path());
+        let fmt_fact = stacks[0]
+            .facts
+            .iter()
+            .find(|f| f.label == "code is formatted")
+            .unwrap();
+        assert_eq!(fmt_fact.command.as_deref(), Some("npx prettier --check ."));
+    }
+
+    #[test]
+    fn test_detect_node_dep_fallback_biome() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("package.json"),
+            r#"{"devDependencies":{"@biomejs/biome":"1.0.0"}}"#,
+        )
+        .unwrap();
+
+        let stacks = detect_stacks(dir.path());
+        let lint_fact = stacks[0]
+            .facts
+            .iter()
+            .find(|f| f.label == "code passes linting")
+            .unwrap();
+        assert_eq!(lint_fact.command.as_deref(), Some("npx biome check"));
+    }
+
+    #[test]
+    fn test_detect_node_script_takes_priority_over_dep() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("package.json"),
+            r#"{"scripts":{"test":"vitest"},"devDependencies":{"jest":"29.0.0"}}"#,
+        )
+        .unwrap();
+
+        let stacks = detect_stacks(dir.path());
+        let test_fact = stacks[0]
+            .facts
+            .iter()
+            .find(|f| f.label == "all tests pass")
+            .unwrap();
+        // Uses the script (npm test), not the dep fallback (npx jest)
+        assert_eq!(test_fact.command.as_deref(), Some("npm test"));
+    }
+
+    #[test]
+    fn test_detect_node_yarn() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("package.json"),
+            r#"{"scripts":{"test":"jest"}}"#,
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("yarn.lock"), "").unwrap();
+
+        let stacks = detect_stacks(dir.path());
+        let test_fact = stacks[0]
+            .facts
+            .iter()
+            .find(|f| f.label == "all tests pass")
+            .unwrap();
+        assert_eq!(test_fact.command.as_deref(), Some("yarn test"));
+    }
+
+    #[test]
+    fn test_detect_node_pnpm() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("package.json"),
+            r#"{"scripts":{"lint":"eslint"}}"#,
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("pnpm-lock.yaml"), "").unwrap();
+
+        let stacks = detect_stacks(dir.path());
+        let lint_fact = stacks[0]
+            .facts
+            .iter()
+            .find(|f| f.label == "code passes linting")
+            .unwrap();
+        assert_eq!(lint_fact.command.as_deref(), Some("pnpm run lint"));
+    }
+
+    #[test]
+    fn test_detect_node_pnpm_dep_fallback() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("package.json"),
+            r#"{"devDependencies":{"eslint":"9.0.0"}}"#,
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("pnpm-lock.yaml"), "").unwrap();
+
+        let stacks = detect_stacks(dir.path());
+        let lint_fact = stacks[0]
+            .facts
+            .iter()
+            .find(|f| f.label == "code passes linting")
+            .unwrap();
+        assert_eq!(lint_fact.command.as_deref(), Some("pnpm exec eslint ."));
+    }
+
+    #[test]
+    fn test_detect_nextjs() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("package.json"),
+            r#"{"dependencies":{"next":"14.0.0"},"scripts":{"build":"next build"}}"#,
+        )
+        .unwrap();
+
+        let stacks = detect_stacks(dir.path());
+        assert_eq!(stacks[0].name, "Next.js");
+    }
+
+    #[test]
+    fn test_detect_deno() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("deno.json"),
+            r#"{"tasks":{"test":"deno test --allow-all"}}"#,
+        )
+        .unwrap();
+
+        let stacks = detect_stacks(dir.path());
+        assert_eq!(stacks.len(), 1);
+        assert_eq!(stacks[0].name, "Deno");
+    }
+
+    #[test]
+    fn test_deno_takes_priority_over_node() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("deno.json"), "{}").unwrap();
+        std::fs::write(dir.path().join("package.json"), "{}").unwrap();
+
+        let stacks = detect_stacks(dir.path());
+        assert_eq!(stacks.len(), 1);
+        assert_eq!(stacks[0].name, "Deno");
+    }
+
+    #[test]
     fn test_detect_python_pyproject() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("pyproject.toml"), "[project]\nname = \"test\"\n").unwrap();
+        std::fs::write(
+            dir.path().join("pyproject.toml"),
+            "[project]\nname = \"test\"\n",
+        )
+        .unwrap();
 
         let stacks = detect_stacks(dir.path());
         assert_eq!(stacks.len(), 1);
         assert_eq!(stacks[0].name, "Python (pyproject.toml)");
+    }
+
+    #[test]
+    fn test_detect_python_pyproject_with_tools() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("pyproject.toml"),
+            "[project]\nname = \"test\"\n\n[tool.pytest.ini_options]\n\n[tool.ruff]\n\n[tool.mypy]\n",
+        )
+        .unwrap();
+
+        let stacks = detect_stacks(dir.path());
+        assert_eq!(stacks.len(), 1);
+        assert!(stacks[0].facts.iter().any(|f| f.label == "all tests pass"));
+        assert!(stacks[0]
+            .facts
+            .iter()
+            .any(|f| f.label == "code passes linting"));
+        assert!(stacks[0]
+            .facts
+            .iter()
+            .any(|f| f.label == "type checking passes"));
+    }
+
+    #[test]
+    fn test_detect_python_pyproject_dep_fallback() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("pyproject.toml"),
+            "[project]\nname = \"test\"\ndependencies = [\n  \"flask\",\n]\n\n[dependency-groups]\ndev = [\n  \"pytest>=7.0\",\n  \"ruff\",\n  \"mypy\",\n]\n",
+        )
+        .unwrap();
+
+        let stacks = detect_stacks(dir.path());
+        assert!(stacks[0].facts.iter().any(|f| f.label == "all tests pass"));
+        assert!(stacks[0]
+            .facts
+            .iter()
+            .any(|f| f.label == "code passes linting"));
+        assert!(stacks[0]
+            .facts
+            .iter()
+            .any(|f| f.label == "type checking passes"));
+    }
+
+    #[test]
+    fn test_detect_python_poetry() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("pyproject.toml"),
+            "[tool.poetry]\nname = \"test\"\n\n[tool.pytest.ini_options]\n",
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("poetry.lock"), "").unwrap();
+
+        let stacks = detect_stacks(dir.path());
+        let test_fact = stacks[0]
+            .facts
+            .iter()
+            .find(|f| f.label == "all tests pass")
+            .unwrap();
+        assert!(test_fact
+            .command
+            .as_deref()
+            .unwrap()
+            .starts_with("poetry run"));
+    }
+
+    #[test]
+    fn test_detect_python_uv() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("pyproject.toml"),
+            "[project]\nname = \"test\"\n\n[tool.pytest.ini_options]\n",
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("uv.lock"), "").unwrap();
+
+        let stacks = detect_stacks(dir.path());
+        let test_fact = stacks[0]
+            .facts
+            .iter()
+            .find(|f| f.label == "all tests pass")
+            .unwrap();
+        assert!(test_fact
+            .command
+            .as_deref()
+            .unwrap()
+            .starts_with("uv run"));
     }
 
     #[test]
@@ -308,6 +1336,27 @@ mod tests {
         let stacks = detect_stacks(dir.path());
         assert_eq!(stacks.len(), 1);
         assert_eq!(stacks[0].name, "Python (requirements.txt)");
+    }
+
+    #[test]
+    fn test_detect_python_requirements_with_deps() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("requirements.txt"),
+            "flask\npytest>=7.0\nruff\nblack==24.0\n",
+        )
+        .unwrap();
+
+        let stacks = detect_stacks(dir.path());
+        assert!(stacks[0].facts.iter().any(|f| f.label == "all tests pass"));
+        assert!(stacks[0]
+            .facts
+            .iter()
+            .any(|f| f.label == "code passes linting"));
+        assert!(stacks[0]
+            .facts
+            .iter()
+            .any(|f| f.label == "code is formatted"));
     }
 
     #[test]
@@ -332,6 +1381,19 @@ mod tests {
     }
 
     #[test]
+    fn test_detect_go_with_golangci() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("go.mod"), "module example.com/test\n").unwrap();
+        std::fs::write(dir.path().join(".golangci.yml"), "").unwrap();
+
+        let stacks = detect_stacks(dir.path());
+        assert!(stacks[0]
+            .facts
+            .iter()
+            .any(|f| f.label == "linter passes"));
+    }
+
+    #[test]
     fn test_detect_ruby() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("Gemfile"), "source 'https://rubygems.org'\n").unwrap();
@@ -339,6 +1401,22 @@ mod tests {
         let stacks = detect_stacks(dir.path());
         assert_eq!(stacks.len(), 1);
         assert_eq!(stacks[0].name, "Ruby");
+    }
+
+    #[test]
+    fn test_detect_ruby_with_rspec_and_rubocop() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("Gemfile"), "").unwrap();
+        std::fs::create_dir(dir.path().join("spec")).unwrap();
+        std::fs::write(dir.path().join(".rubocop.yml"), "").unwrap();
+
+        let stacks = detect_stacks(dir.path());
+        assert!(stacks[0].facts.iter().any(|f| f.label == "all tests pass"
+            && f.command.as_deref() == Some("bundle exec rspec")));
+        assert!(stacks[0]
+            .facts
+            .iter()
+            .any(|f| f.label == "code passes linting"));
     }
 
     #[test]
@@ -359,6 +1437,80 @@ mod tests {
         let stacks = detect_stacks(dir.path());
         assert_eq!(stacks.len(), 1);
         assert_eq!(stacks[0].name, "Java (Gradle)");
+    }
+
+    #[test]
+    fn test_detect_java_gradle_kts() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("build.gradle.kts"), "").unwrap();
+
+        let stacks = detect_stacks(dir.path());
+        assert_eq!(stacks.len(), 1);
+        assert_eq!(stacks[0].name, "Java (Gradle)");
+    }
+
+    #[test]
+    fn test_detect_zig() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("build.zig"), "").unwrap();
+
+        let stacks = detect_stacks(dir.path());
+        assert_eq!(stacks.len(), 1);
+        assert_eq!(stacks[0].name, "Zig");
+    }
+
+    #[test]
+    fn test_detect_gleam() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("gleam.toml"), "").unwrap();
+
+        let stacks = detect_stacks(dir.path());
+        assert_eq!(stacks.len(), 1);
+        assert_eq!(stacks[0].name, "Gleam");
+    }
+
+    #[test]
+    fn test_detect_dart() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("pubspec.yaml"), "name: test\n").unwrap();
+
+        let stacks = detect_stacks(dir.path());
+        assert_eq!(stacks.len(), 1);
+        assert_eq!(stacks[0].name, "Dart");
+    }
+
+    #[test]
+    fn test_detect_flutter() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("pubspec.yaml"),
+            "name: test\nflutter:\n  sdk: flutter\n",
+        )
+        .unwrap();
+
+        let stacks = detect_stacks(dir.path());
+        assert_eq!(stacks.len(), 1);
+        assert_eq!(stacks[0].name, "Flutter");
+    }
+
+    #[test]
+    fn test_detect_docker() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("Dockerfile"), "FROM alpine\n").unwrap();
+
+        let stacks = detect_stacks(dir.path());
+        assert_eq!(stacks.len(), 1);
+        assert_eq!(stacks[0].name, "Docker");
+    }
+
+    #[test]
+    fn test_detect_terraform() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("main.tf"), "").unwrap();
+
+        let stacks = detect_stacks(dir.path());
+        assert_eq!(stacks.len(), 1);
+        assert_eq!(stacks[0].name, "Terraform");
     }
 
     #[test]
@@ -410,37 +1562,216 @@ mod tests {
     }
 
     #[test]
-    fn test_init_refuses_overwrite() {
+    fn test_init_skips_existing_facts_file() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir(dir.path().join(".git")).unwrap();
         std::fs::write(dir.path().join(".facts"), "- existing fact\n").unwrap();
 
         let result = run_in(dir.path());
+        assert!(result.is_ok());
 
-        assert!(result.is_err());
-        let err = result.unwrap_err().to_string();
-        assert!(
-            err.contains("already exists"),
-            "expected 'already exists' error, got: {err}"
-        );
-
-        // Verify original content is unchanged
         let content = std::fs::read_to_string(dir.path().join(".facts")).unwrap();
         assert_eq!(content, "- existing fact\n");
+
+        // Skills still installed
+        assert!(dir
+            .path()
+            .join(".agents/skills/facts/SKILL.md")
+            .exists());
     }
 
     #[test]
-    fn test_init_creates_file() {
+    fn test_init_creates_file_and_skills() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir(dir.path().join(".git")).unwrap();
         std::fs::write(dir.path().join("Cargo.toml"), "[package]\nname=\"t\"\n").unwrap();
 
         let result = run_in(dir.path());
-
         assert!(result.is_ok(), "init failed: {}", result.unwrap_err());
-        assert!(dir.path().join(".facts").exists());
 
+        assert!(dir.path().join(".facts").exists());
         let content = std::fs::read_to_string(dir.path().join(".facts")).unwrap();
-        assert!(content.contains("Cargo"));
+        assert!(content.contains("cargo"));
+
+        assert!(dir
+            .path()
+            .join(".agents/skills/facts/SKILL.md")
+            .exists());
+        assert!(dir
+            .path()
+            .join(".agents/skills/facts-discover/SKILL.md")
+            .exists());
+        assert!(dir
+            .path()
+            .join(".agents/skills/facts-implement/SKILL.md")
+            .exists());
+    }
+
+    #[test]
+    fn test_init_idempotent() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        std::fs::write(dir.path().join("Cargo.toml"), "[package]\n").unwrap();
+
+        assert!(run_in(dir.path()).is_ok());
+        let content_first = std::fs::read_to_string(dir.path().join(".facts")).unwrap();
+
+        assert!(run_in(dir.path()).is_ok());
+        let content_second = std::fs::read_to_string(dir.path().join(".facts")).unwrap();
+        assert_eq!(content_first, content_second);
+    }
+
+    #[test]
+    fn test_install_skill_creates() {
+        let dir = tempfile::tempdir().unwrap();
+        install_skill(dir.path(), "test-skill", "# skill content").unwrap();
+
+        let path = dir.path().join(".agents/skills/test-skill/SKILL.md");
+        assert!(path.exists());
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "# skill content"
+        );
+    }
+
+    #[test]
+    fn test_install_skill_updates() {
+        let dir = tempfile::tempdir().unwrap();
+        install_skill(dir.path(), "test-skill", "v1").unwrap();
+        install_skill(dir.path(), "test-skill", "v2").unwrap();
+
+        let path = dir.path().join(".agents/skills/test-skill/SKILL.md");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "v2");
+    }
+
+    #[test]
+    fn test_install_skill_skips_identical() {
+        let dir = tempfile::tempdir().unwrap();
+        install_skill(dir.path(), "test-skill", "same").unwrap();
+        install_skill(dir.path(), "test-skill", "same").unwrap();
+
+        let path = dir.path().join(".agents/skills/test-skill/SKILL.md");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "same");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_link_skill_for_claude() {
+        let dir = tempfile::tempdir().unwrap();
+        install_skill(dir.path(), "test-skill", "content").unwrap();
+        link_skill_for_claude(dir.path(), "test-skill").unwrap();
+
+        let link = dir.path().join(".claude/skills/test-skill");
+        assert!(link.is_symlink());
+        // The symlink target dir should contain SKILL.md
+        assert!(link.join("SKILL.md").exists());
+        assert_eq!(
+            std::fs::read_to_string(link.join("SKILL.md")).unwrap(),
+            "content"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_link_skill_idempotent() {
+        let dir = tempfile::tempdir().unwrap();
+        install_skill(dir.path(), "test-skill", "content").unwrap();
+        link_skill_for_claude(dir.path(), "test-skill").unwrap();
+        // Second call should succeed without error.
+        link_skill_for_claude(dir.path(), "test-skill").unwrap();
+
+        let link = dir.path().join(".claude/skills/test-skill");
+        assert!(link.is_symlink());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_link_skill_preserves_real_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        // Create a real directory at the link location.
+        let real_dir = dir.path().join(".claude/skills/test-skill");
+        std::fs::create_dir_all(&real_dir).unwrap();
+        std::fs::write(real_dir.join("SKILL.md"), "user content").unwrap();
+
+        install_skill(dir.path(), "test-skill", "agent content").unwrap();
+        link_skill_for_claude(dir.path(), "test-skill").unwrap();
+
+        // Real dir should be untouched.
+        assert!(!real_dir.is_symlink());
+        assert_eq!(
+            std::fs::read_to_string(real_dir.join("SKILL.md")).unwrap(),
+            "user content"
+        );
+    }
+
+    // -- Dependency helpers --
+
+    #[test]
+    fn test_dep_line_matches() {
+        assert!(dep_line_matches("pytest", "pytest"));
+        assert!(dep_line_matches("pytest>=7.0", "pytest"));
+        assert!(dep_line_matches("pytest==7.0", "pytest"));
+        assert!(dep_line_matches("pytest[extra]", "pytest"));
+        assert!(dep_line_matches("pytest ~=7.0", "pytest"));
+        assert!(dep_line_matches("pytest >=7.0", "pytest"));
+        assert!(!dep_line_matches("pytest-cov", "pytest"));
+        assert!(!dep_line_matches("pypytest", "pytest"));
+    }
+
+    #[test]
+    fn test_dep_in_pyproject() {
+        let content = "[project]\ndependencies = [\n  \"flask>=2.0\",\n  \"sqlalchemy\",\n]\n\n[dependency-groups]\ndev = [\n  \"pytest>=7.0\",\n  \"ruff\",\n]\n";
+        assert!(dep_in_pyproject(content, "flask"));
+        assert!(dep_in_pyproject(content, "pytest"));
+        assert!(dep_in_pyproject(content, "ruff"));
+        assert!(!dep_in_pyproject(content, "django"));
+    }
+
+    #[test]
+    fn test_dep_in_requirements() {
+        let content = "flask>=2.0\npytest\n# comment\nruff==0.1.0\n";
+        assert!(dep_in_requirements(content, "flask"));
+        assert!(dep_in_requirements(content, "pytest"));
+        assert!(dep_in_requirements(content, "ruff"));
+        assert!(!dep_in_requirements(content, "django"));
+    }
+
+    // -- JSON / TOML helpers --
+
+    #[test]
+    fn test_json_section_has_key() {
+        let json = r#"{"scripts":{"test":"jest","lint":"eslint ."}}"#;
+        assert!(json_section_has_key(json, "scripts", "test"));
+        assert!(json_section_has_key(json, "scripts", "lint"));
+        assert!(!json_section_has_key(json, "scripts", "build"));
+    }
+
+    #[test]
+    fn test_json_section_has_key_nested() {
+        let json = r#"{"a":{"scripts":"value"},"scripts":{"test":"jest"}}"#;
+        assert!(json_section_has_key(json, "scripts", "test"));
+    }
+
+    #[test]
+    fn test_json_section_has_key_string_value() {
+        let json = r#"{"name":"scripts","other":{"test":"x"}}"#;
+        assert!(!json_section_has_key(json, "scripts", "test"));
+    }
+
+    #[test]
+    fn test_json_has_dep() {
+        let json = r#"{"dependencies":{"next":"14.0.0"},"devDependencies":{"typescript":"5"}}"#;
+        assert!(json_has_dep(json, "next"));
+        assert!(json_has_dep(json, "typescript"));
+        assert!(!json_has_dep(json, "react"));
+    }
+
+    #[test]
+    fn test_toml_has_section() {
+        let toml = "[project]\nname = \"test\"\n\n[tool.pytest.ini_options]\n\n[tool.ruff]\n";
+        assert!(toml_has_section(toml, "project"));
+        assert!(toml_has_section(toml, "tool.pytest"));
+        assert!(toml_has_section(toml, "tool.ruff"));
+        assert!(!toml_has_section(toml, "tool.mypy"));
     }
 }

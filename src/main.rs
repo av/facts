@@ -12,6 +12,7 @@ mod parser;
 mod project;
 mod remove;
 mod tags;
+mod uninit;
 mod writer;
 
 use clap::{Parser, Subcommand};
@@ -129,8 +130,11 @@ enum Command {
         file: Option<String>,
     },
 
-    /// Scaffold a .facts file with detected project stack.
+    /// Scaffold a .facts file and install agent skills.
     Init,
+
+    /// Remove .facts file and agent skills installed by init.
+    Uninit,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -219,6 +223,9 @@ fn main() -> anyhow::Result<()> {
         }
         Some(Command::Init) => {
             init::run()?;
+        }
+        Some(Command::Uninit) => {
+            uninit::run()?;
         }
         None => {
             let opts = list::ListOptions {

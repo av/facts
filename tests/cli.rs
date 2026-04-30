@@ -535,21 +535,21 @@ fn init_creates_facts_file_with_cargo() {
         .arg("init")
         .assert()
         .success()
-        .stdout(predicate::str::contains("created"))
+        .stdout(predicate::str::contains("create"))
         .stdout(predicate::str::contains("Rust/Cargo"));
 
     let content = fs::read_to_string(dir.path().join(".facts")).unwrap();
-    assert!(content.contains("Cargo"));
+    assert!(content.contains("cargo"));
 }
 
 #[test]
-fn init_refuses_overwrite() {
+fn init_skips_existing_facts_file() {
     let dir = project("- existing\n");
     facts_cmd(&dir)
         .arg("init")
         .assert()
-        .failure()
-        .stderr(predicate::str::contains("already exists"));
+        .success()
+        .stdout(predicate::str::contains("skip"));
 
     // Original content untouched
     let content = fs::read_to_string(dir.path().join(".facts")).unwrap();
@@ -563,10 +563,166 @@ fn init_no_frameworks_scaffolds_minimal() {
         .arg("init")
         .assert()
         .success()
-        .stdout(predicate::str::contains("no known frameworks"));
+        .stdout(predicate::str::contains("no frameworks"));
 
     let content = fs::read_to_string(dir.path().join(".facts")).unwrap();
     assert!(content.contains("# project"));
+}
+
+#[test]
+fn init_installs_skills() {
+    let dir = empty_project();
+    facts_cmd(&dir)
+        .arg("init")
+        .assert()
+        .success();
+
+    assert!(dir.path().join(".agents/skills/facts/SKILL.md").exists());
+    assert!(dir
+        .path()
+        .join(".agents/skills/facts-discover/SKILL.md")
+        .exists());
+    assert!(dir
+        .path()
+        .join(".agents/skills/facts-implement/SKILL.md")
+        .exists());
+}
+
+#[test]
+fn init_is_idempotent() {
+    let dir = empty_project();
+    fs::write(dir.path().join("Cargo.toml"), "[package]\n").unwrap();
+
+    facts_cmd(&dir).arg("init").assert().success();
+    let content_first = fs::read_to_string(dir.path().join(".facts")).unwrap();
+
+    // Second run succeeds, .facts unchanged, skills still present.
+    // Skip count varies (4 without Claude, 7 with Claude symlinks).
+    facts_cmd(&dir)
+        .arg("init")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("skip"));
+
+    let content_second = fs::read_to_string(dir.path().join(".facts")).unwrap();
+    assert_eq!(content_first, content_second);
+}
+
+#[test]
+fn init_detects_node_scripts() {
+    let dir = empty_project();
+    fs::write(
+        dir.path().join("package.json"),
+        r#"{"scripts":{"test":"jest","lint":"eslint .","build":"tsc"}}"#,
+    )
+    .unwrap();
+
+    facts_cmd(&dir).arg("init").assert().success();
+
+    let content = fs::read_to_string(dir.path().join(".facts")).unwrap();
+    assert!(content.contains("npm test"));
+    assert!(content.contains("npm run lint"));
+    assert!(content.contains("npm run build"));
+}
+
+#[test]
+fn init_detects_yarn() {
+    let dir = empty_project();
+    fs::write(
+        dir.path().join("package.json"),
+        r#"{"scripts":{"test":"vitest"}}"#,
+    )
+    .unwrap();
+    fs::write(dir.path().join("yarn.lock"), "").unwrap();
+
+    facts_cmd(&dir).arg("init").assert().success();
+
+    let content = fs::read_to_string(dir.path().join(".facts")).unwrap();
+    assert!(content.contains("yarn test"));
+}
+
+#[test]
+fn init_detects_python_tools() {
+    let dir = empty_project();
+    fs::write(
+        dir.path().join("pyproject.toml"),
+        "[project]\nname = \"test\"\n\n[tool.pytest.ini_options]\n\n[tool.ruff]\n",
+    )
+    .unwrap();
+
+    facts_cmd(&dir).arg("init").assert().success();
+
+    let content = fs::read_to_string(dir.path().join(".facts")).unwrap();
+    assert!(content.contains("pytest"));
+    assert!(content.contains("ruff check"));
+}
+
+// ===========================================================================
+// uninit
+// ===========================================================================
+
+#[test]
+fn uninit_removes_facts_and_skills() {
+    let dir = empty_project();
+    fs::write(dir.path().join("Cargo.toml"), "[package]\n").unwrap();
+
+    facts_cmd(&dir).arg("init").assert().success();
+    assert!(dir.path().join(".facts").exists());
+    assert!(dir.path().join(".agents/skills/facts/SKILL.md").exists());
+
+    facts_cmd(&dir)
+        .arg("uninit")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("remove"));
+
+    assert!(!dir.path().join(".facts").exists());
+    assert!(!dir.path().join(".agents/skills/facts/SKILL.md").exists());
+}
+
+#[test]
+fn uninit_is_idempotent() {
+    let dir = empty_project();
+
+    facts_cmd(&dir)
+        .arg("uninit")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("skip"));
+
+    // Running again is fine.
+    facts_cmd(&dir).arg("uninit").assert().success();
+}
+
+#[test]
+fn uninit_preserves_named_facts_files() {
+    let dir = empty_project();
+    fs::write(dir.path().join("Cargo.toml"), "[package]\n").unwrap();
+
+    facts_cmd(&dir).arg("init").assert().success();
+    fs::write(dir.path().join("cli.facts"), "- cli fact\n").unwrap();
+
+    facts_cmd(&dir).arg("uninit").assert().success();
+
+    assert!(!dir.path().join(".facts").exists());
+    assert!(dir.path().join("cli.facts").exists());
+}
+
+#[test]
+fn init_uninit_roundtrip() {
+    let dir = empty_project();
+    fs::write(dir.path().join("Cargo.toml"), "[package]\n").unwrap();
+
+    facts_cmd(&dir).arg("init").assert().success();
+    facts_cmd(&dir).arg("uninit").assert().success();
+
+    assert!(!dir.path().join(".facts").exists());
+    assert!(!dir.path().join(".agents").exists());
+
+    // Re-init should work cleanly.
+    facts_cmd(&dir).arg("init").assert().success();
+    assert!(dir.path().join(".facts").exists());
+    assert!(dir.path().join(".agents/skills/facts/SKILL.md").exists());
 }
 
 // ===========================================================================
