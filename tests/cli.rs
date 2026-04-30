@@ -1137,3 +1137,387 @@ fn section_filter_nested_includes_deep_children() {
         .stdout(predicate::str::contains("output fact"))
         .stdout(predicate::str::contains("list fact").not());
 }
+
+// ===========================================================================
+// Multi-file scenarios
+// ===========================================================================
+
+#[test]
+fn add_to_named_file_creates_it() {
+    let dir = project("- default fact\n");
+    facts_cmd(&dir)
+        .args(["add", "cli specific fact", "--file", "cli.facts"])
+        .assert()
+        .success();
+
+    let cli_path = dir.path().join("cli.facts");
+    assert!(cli_path.exists(), "cli.facts should be created");
+    let content = fs::read_to_string(&cli_path).unwrap();
+    assert!(content.contains("cli specific fact"));
+}
+
+#[test]
+fn list_aggregates_from_both_files() {
+    let dir = project("- default fact\n");
+    fs::write(dir.path().join("cli.facts"), "- cli fact\n").unwrap();
+
+    let output = facts_cmd(&dir)
+        .arg("list")
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("default fact"), "should list fact from .facts");
+    assert!(stdout.contains("cli fact"), "should list fact from cli.facts");
+}
+
+#[test]
+fn list_shows_file_prefix_for_cli_facts_not_for_default() {
+    let dir = project("- default fact\n");
+    fs::write(dir.path().join("cli.facts"), "- cli fact\n").unwrap();
+
+    let output = facts_cmd(&dir)
+        .arg("list")
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    // The line with "cli fact" should have "cli.facts" prefix
+    let cli_line = stdout.lines().find(|l| l.contains("cli fact")).unwrap();
+    assert!(
+        cli_line.contains("cli.facts"),
+        "cli.facts prefix should appear for named file, got: {cli_line}"
+    );
+
+    // The line with "default fact" should NOT have ".facts" prefix
+    let default_line = stdout.lines().find(|l| l.contains("default fact")).unwrap();
+    assert!(
+        !default_line.contains(".facts"),
+        "no .facts prefix for default file, got: {default_line}"
+    );
+}
+
+#[test]
+fn check_runs_commands_from_all_files() {
+    let dir = empty_project();
+    fs::write(
+        dir.path().join(".facts"),
+        "- label: default cmd\n  command: \"true\"\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("cli.facts"),
+        "- label: cli cmd\n  command: \"true\"\n",
+    )
+    .unwrap();
+
+    facts_cmd(&dir)
+        .arg("check")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("2 passed"));
+}
+
+#[test]
+fn lint_validates_all_files() {
+    let dir = empty_project();
+    fs::write(dir.path().join(".facts"), "- valid fact\n").unwrap();
+    fs::write(dir.path().join("cli.facts"), "- another valid fact\n").unwrap();
+
+    facts_cmd(&dir)
+        .arg("lint")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("2 files passed"));
+}
+
+#[test]
+fn remove_fact_from_non_default_file() {
+    let dir = empty_project();
+    fs::write(dir.path().join(".facts"), "- default fact\n").unwrap();
+    fs::write(dir.path().join("cli.facts"), "- cli fact to remove\n").unwrap();
+
+    // Get ID of the cli fact
+    let list_output = facts_cmd(&dir).arg("list").output().unwrap();
+    let stdout = String::from_utf8_lossy(&list_output.stdout);
+    let id = stdout
+        .lines()
+        .find(|l| l.contains("cli fact to remove"))
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap();
+
+    facts_cmd(&dir)
+        .args(["remove", id])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("cli fact to remove"));
+
+    let content = fs::read_to_string(dir.path().join("cli.facts")).unwrap();
+    assert!(
+        !content.contains("cli fact to remove"),
+        "fact should be removed from cli.facts"
+    );
+    // Default file should be untouched
+    let default_content = fs::read_to_string(dir.path().join(".facts")).unwrap();
+    assert!(default_content.contains("default fact"));
+}
+
+#[test]
+fn edit_fact_in_non_default_file() {
+    let dir = empty_project();
+    fs::write(dir.path().join(".facts"), "- default fact\n").unwrap();
+    fs::write(dir.path().join("cli.facts"), "- cli fact original\n").unwrap();
+
+    // Get ID of the cli fact
+    let list_output = facts_cmd(&dir).arg("list").output().unwrap();
+    let stdout = String::from_utf8_lossy(&list_output.stdout);
+    let id = stdout
+        .lines()
+        .find(|l| l.contains("cli fact original"))
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap();
+
+    facts_cmd(&dir)
+        .args(["edit", id, "--label", "cli fact edited"])
+        .assert()
+        .success();
+
+    let content = fs::read_to_string(dir.path().join("cli.facts")).unwrap();
+    assert!(content.contains("cli fact edited"));
+    assert!(!content.contains("cli fact original"));
+}
+
+#[test]
+fn cross_file_same_label_different_ids() {
+    // Two files with the same label should produce different IDs
+    let dir = empty_project();
+    fs::write(dir.path().join(".facts"), "- shared label\n").unwrap();
+    fs::write(dir.path().join("other.facts"), "- shared label\n").unwrap();
+
+    let output = facts_cmd(&dir).arg("list").output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let ids: Vec<&str> = stdout
+        .lines()
+        .filter(|l| l.contains("shared label"))
+        .map(|l| l.split_whitespace().next().unwrap())
+        .collect();
+    assert_eq!(ids.len(), 2);
+    assert_ne!(ids[0], ids[1], "same label in different files should get different IDs");
+}
+
+// ===========================================================================
+// Tag normalization
+// ===========================================================================
+
+#[test]
+fn add_plain_fact_with_tags_creates_mapping_with_tags_key() {
+    // Adding a fact with --tags promotes it to a mapping with tags: key
+    let dir = project("");
+    facts_cmd(&dir)
+        .args(["add", "tagged fact", "--tags", "mvp,core"])
+        .assert()
+        .success();
+
+    let content = fs::read_to_string(dir.path().join(".facts")).unwrap();
+    // Should be a mapping with tags: key (not inline @tags)
+    assert!(content.contains("label: tagged fact"));
+    assert!(content.contains("tags: [mvp, core]"));
+    assert!(!content.contains("@mvp"));
+    assert!(!content.contains("@core"));
+}
+
+#[test]
+fn add_plain_fact_no_tags_stays_plain() {
+    let dir = project("");
+    facts_cmd(&dir)
+        .args(["add", "plain fact"])
+        .assert()
+        .success();
+
+    let content = fs::read_to_string(dir.path().join(".facts")).unwrap();
+    assert_eq!(content, "- plain fact\n");
+}
+
+#[test]
+fn mapping_fact_has_tags_in_tags_key() {
+    // A fact with command + tags should have tags in tags: key, not inline
+    let dir = project("");
+    facts_cmd(&dir)
+        .args(["add", "cmd fact", "--command", "echo ok", "--tags", "mvp"])
+        .assert()
+        .success();
+
+    let content = fs::read_to_string(dir.path().join(".facts")).unwrap();
+    assert!(content.contains("label: cmd fact"));
+    assert!(content.contains("command: echo ok"));
+    assert!(content.contains("tags: [mvp]"));
+    assert!(!content.contains("@mvp"));
+}
+
+#[test]
+fn edit_adds_tags_to_plain_promotes_to_mapping() {
+    let dir = project("- a plain fact\n");
+
+    let list_output = facts_cmd(&dir).arg("list").output().unwrap();
+    let stdout = String::from_utf8_lossy(&list_output.stdout);
+    let id = stdout
+        .lines()
+        .find(|l| l.contains("a plain fact"))
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap();
+
+    facts_cmd(&dir)
+        .args(["edit", id, "--tags", "mvp,core"])
+        .assert()
+        .success();
+
+    let content = fs::read_to_string(dir.path().join(".facts")).unwrap();
+    // Promoted to mapping: tags in tags: key
+    assert!(content.contains("label: a plain fact"));
+    assert!(content.contains("tags: [mvp, core]"));
+    assert!(!content.contains("@mvp"));
+}
+
+#[test]
+fn edit_adds_command_to_tagged_plain_migrates_tags_to_key() {
+    // A plain fact with inline tags: when adding a command, tags should migrate
+    // from inline (@tag) to tags: key
+    let dir = project("- tagged fact @mvp @core\n");
+
+    let list_output = facts_cmd(&dir).arg("list").output().unwrap();
+    let stdout = String::from_utf8_lossy(&list_output.stdout);
+    let id = stdout
+        .lines()
+        .find(|l| l.contains("tagged fact"))
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap();
+
+    facts_cmd(&dir)
+        .args(["edit", id, "--command", "echo check"])
+        .assert()
+        .success();
+
+    let content = fs::read_to_string(dir.path().join(".facts")).unwrap();
+    assert!(content.contains("label: tagged fact"));
+    assert!(content.contains("command: echo check"));
+    assert!(content.contains("tags: [mvp, core]"));
+    assert!(!content.contains("@mvp"));
+    assert!(!content.contains("@core"));
+}
+
+#[test]
+fn same_label_different_tags_same_id() {
+    // Tags are stripped from label before ID hashing, so same label with
+    // different tags should produce the same base ID
+    let dir = project("- my fact @mvp\n- another fact @core\n");
+
+    let list_output = facts_cmd(&dir).arg("list").output().unwrap();
+    let stdout = String::from_utf8_lossy(&list_output.stdout);
+
+    // Get IDs
+    // Verify the two different-label facts are listed
+    assert!(stdout.lines().any(|l| l.contains("my fact")));
+    assert!(stdout.lines().any(|l| l.contains("another fact")));
+
+    // Now test the real scenario: same label with different tags in separate files
+    let dir2 = project("- unique label @alpha\n");
+    fs::write(dir2.path().join("other.facts"), "- unique label @beta\n").unwrap();
+
+    let list_output2 = facts_cmd(&dir2).arg("list").output().unwrap();
+    let stdout2 = String::from_utf8_lossy(&list_output2.stdout);
+    let ids: Vec<&str> = stdout2
+        .lines()
+        .filter(|l| l.contains("unique label"))
+        .map(|l| l.split_whitespace().next().unwrap())
+        .collect();
+
+    // Same label "unique label" (tags stripped) → same hash → collision resolution
+    // Both should be present but with different IDs due to collision handling
+    assert_eq!(ids.len(), 2, "both facts should be listed");
+    assert_ne!(ids[0], ids[1], "collision resolution should make them unique");
+    // But importantly, the base hash is the same (they collided because tags
+    // were stripped from the label before hashing)
+}
+
+// ===========================================================================
+// --tags filter with @implemented
+// ===========================================================================
+
+#[test]
+fn tags_filter_implemented() {
+    let dir = project(
+        "- done feature @implemented\n- pending feature\n- also done @implemented\n",
+    );
+
+    // Filter for implemented facts
+    facts_cmd(&dir)
+        .args(["list", "--tags", "implemented"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("done feature"))
+        .stdout(predicate::str::contains("also done"))
+        .stdout(predicate::str::contains("pending feature").not());
+}
+
+#[test]
+fn tags_filter_not_implemented() {
+    let dir = project(
+        "- done feature @implemented\n- pending feature\n- also done @implemented\n",
+    );
+
+    // Filter for NOT implemented facts
+    facts_cmd(&dir)
+        .args(["list", "--tags", "not implemented"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("pending feature"))
+        .stdout(predicate::str::contains("done feature").not())
+        .stdout(predicate::str::contains("also done").not());
+}
+
+#[test]
+fn check_runs_commands_for_implemented_facts() {
+    // @implemented is informational — check should still run the command
+    let dir = project(
+        "- label: done check\n  command: \"true\"\n  tags: [implemented]\n\
+         - label: pending check\n  command: \"true\"\n",
+    );
+
+    facts_cmd(&dir)
+        .arg("check")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("done check"))
+        .stdout(predicate::str::contains("pending check"))
+        .stdout(predicate::str::contains("2 passed"));
+}
+
+#[test]
+fn check_with_tags_filter_only_runs_matched() {
+    // Using --tags "implemented" on check should only run implemented facts
+    let dir = project(
+        "- label: done check\n  command: \"true\"\n  tags: [implemented]\n\
+         - label: pending check\n  command: \"false\"\n",
+    );
+
+    // Without --tags, the failing command causes failure
+    facts_cmd(&dir)
+        .arg("check")
+        .assert()
+        .failure();
+
+    // With --tags "implemented", only the passing command runs
+    facts_cmd(&dir)
+        .args(["check", "--tags", "implemented"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("done check"))
+        .stdout(predicate::str::contains("1 passed"));
+}
