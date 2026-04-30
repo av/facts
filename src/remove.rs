@@ -71,20 +71,21 @@ pub fn run_in(target_id: &str, root: &Path) -> Result<()> {
     // Get the fact for output before removing it
     let removed_label = locate::get_fact(sheet, location).label.clone();
 
-    // Print the removed fact
-    println!("{removed_label}");
-
     // Remove the fact
     remove_fact(sheet, location);
 
     // Write back
     let output = writer::write(sheet);
     if output.trim().is_empty() {
-        std::fs::write(file_path, "")?;
+        std::fs::write(file_path, "")
+            .with_context(|| format!("failed to write {}", file_path.display()))?;
     } else {
         std::fs::write(file_path, &output)
             .with_context(|| format!("failed to write {}", file_path.display()))?;
     }
+
+    // Print the removed fact (only after successful write)
+    println!("{removed_label}");
 
     Ok(())
 }

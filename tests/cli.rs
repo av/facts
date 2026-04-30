@@ -2078,3 +2078,73 @@ fn check_rejects_empty_tag_expr() {
         .stderr(predicate::str::contains("invalid tag expression"));
 }
 
+#[test]
+fn remove_readonly_file_fails_without_printing_label() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = project("- fact to remove\n");
+
+    // Find the ID for "fact to remove"
+    let list_output = facts_cmd(&dir).arg("list").output().unwrap();
+    let stdout = String::from_utf8_lossy(&list_output.stdout);
+    let id = stdout
+        .lines()
+        .find(|l| l.contains("fact to remove"))
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap();
+
+    // Make the .facts file read-only
+    let facts_path = dir.path().join(".facts");
+    let perms = std::fs::Permissions::from_mode(0o444);
+    fs::set_permissions(&facts_path, perms).unwrap();
+
+    // remove should fail (can't write) and must NOT print the label to stdout
+    facts_cmd(&dir)
+        .args(["remove", id])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("fact to remove").not());
+
+    // Restore permissions for cleanup
+    let perms = std::fs::Permissions::from_mode(0o644);
+    fs::set_permissions(&facts_path, perms).unwrap();
+}
+
+// ===========================================================================
+// ISSUE-005: tags with whitespace
+// ===========================================================================
+
+#[test]
+fn add_rejects_tag_with_whitespace() {
+    let dir = empty_project();
+    facts_cmd(&dir)
+        .args(["add", "test", "--tags", "has space"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("cannot contain whitespace"));
+}
+
+#[test]
+fn edit_add_tag_rejects_whitespace() {
+    let dir = project("- label: fact\n  command: echo ok\n  id: f1\n");
+    facts_cmd(&dir)
+        .args(["edit", "f1", "--add-tag", "has space"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("cannot contain whitespace"));
+}
+
+#[test]
+fn add_accepts_valid_comma_separated_tags() {
+    let dir = empty_project();
+    facts_cmd(&dir)
+        .args(["add", "test", "--tags", "valid,tags"])
+        .assert()
+        .success();
+    let content = fs::read_to_string(dir.path().join(".facts")).unwrap();
+    assert!(content.contains("@valid"));
+    assert!(content.contains("@tags"));
+}
+

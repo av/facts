@@ -41,6 +41,10 @@ pub fn run_in(opts: &EditOptions, root: &Path) -> Result<()> {
         if label.contains('\n') || label.contains('\r') {
             anyhow::bail!("label cannot contain newlines");
         }
+        let (stripped_label, _) = parser::extract_inline_tags(label);
+        if stripped_label.trim().is_empty() {
+            anyhow::bail!("label cannot be empty");
+        }
     }
 
     let files = project::discover_fact_files(root)?;

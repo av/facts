@@ -175,9 +175,10 @@ fn main() -> anyhow::Result<()> {
             id,
             tags,
         }) => {
-            let tags = tags
-                .map(|t| add::parse_tags(&t))
-                .unwrap_or_default();
+            let tags = match tags {
+                Some(t) => add::parse_tags(&t)?,
+                None => Vec::new(),
+            };
             let opts = add::AddOptions {
                 label,
                 file,
@@ -200,9 +201,18 @@ fn main() -> anyhow::Result<()> {
             add_tag,
             remove_tag,
         }) => {
-            let tags = tags.map(|t| add::parse_tags(&t));
-            let add_tags = add_tag.map(|t| add::parse_tags(&t));
-            let remove_tags = remove_tag.map(|t| add::parse_tags(&t));
+            let tags = match tags {
+                Some(t) => Some(add::parse_tags(&t)?),
+                None => None,
+            };
+            let add_tags = match add_tag {
+                Some(t) => Some(add::parse_tags(&t)?),
+                None => None,
+            };
+            let remove_tags = match remove_tag {
+                Some(t) => Some(add::parse_tags(&t)?),
+                None => None,
+            };
             let opts = edit::EditOptions {
                 target_id: id,
                 label,

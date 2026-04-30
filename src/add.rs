@@ -38,6 +38,12 @@ fn run_in(opts: &AddOptions, root: &Path) -> Result<()> {
         anyhow::bail!("label cannot contain newlines");
     }
 
+    // Reject empty labels (including labels that become empty after stripping inline tags).
+    let (stripped_label, _) = parser::extract_inline_tags(&opts.label);
+    if stripped_label.trim().is_empty() {
+        anyhow::bail!("label cannot be empty");
+    }
+
     let filename = opts.file.as_deref().unwrap_or(".facts");
 
     // Reject absolute paths — there's no valid reason to use one.
@@ -184,12 +190,19 @@ fn ensure_section_path(
 }
 
 /// Parse a comma-separated tags string into a Vec<String>.
-pub fn parse_tags(tags_str: &str) -> Vec<String> {
-    tags_str
+/// Returns an error if any tag contains whitespace.
+pub fn parse_tags(tags_str: &str) -> Result<Vec<String>> {
+    let tags: Vec<String> = tags_str
         .split(',')
         .map(|t| t.trim().to_string())
         .filter(|t| !t.is_empty())
-        .collect()
+        .collect();
+    for tag in &tags {
+        if tag.contains(char::is_whitespace) {
+            anyhow::bail!("tag '{}' cannot contain whitespace", tag);
+        }
+    }
+    Ok(tags)
 }
 
 #[cfg(test)]
@@ -386,9 +399,24 @@ mod tests {
 
     #[test]
     fn test_parse_tags() {
-        assert_eq!(parse_tags("mvp,core"), vec!["mvp", "core"]);
-        assert_eq!(parse_tags("mvp, core, "), vec!["mvp", "core"]);
-        assert_eq!(parse_tags("single"), vec!["single"]);
+        assert_eq!(parse_tags("mvp,core").unwrap(), vec!["mvp", "core"]);
+        assert_eq!(parse_tags("mvp, core, ").unwrap(), vec!["mvp", "core"]);
+        assert_eq!(parse_tags("single").unwrap(), vec!["single"]);
+    }
+
+    #[test]
+    fn test_parse_tags_rejects_whitespace() {
+        let err = parse_tags("has space").unwrap_err();
+        assert!(
+            err.to_string().contains("cannot contain whitespace"),
+            "unexpected error: {err}"
+        );
+
+        let err = parse_tags("ok,has space,also_ok").unwrap_err();
+        assert!(
+            err.to_string().contains("'has space'"),
+            "error should name the bad tag: {err}"
+        );
     }
 
     #[test]
