@@ -11,7 +11,7 @@ use crate::lint;
 use crate::model::FactSheet;
 use crate::parser;
 use crate::project;
-use crate::tags::matches_tag_expr;
+use crate::tags::{matches_tag_expr, validate_tag_expr};
 
 /// Options for the check command.
 pub struct CheckOptions {
@@ -142,6 +142,13 @@ fn run_with_timeout(mut cmd: Command, timeout: Duration) -> (i32, String) {
 
 /// Run the check subcommand.
 pub fn run(opts: &CheckOptions) -> Result<bool> {
+    // Validate tag expression up front so malformed expressions fail early
+    // instead of silently producing empty output.
+    if let Some(ref expr) = opts.tags_expr {
+        validate_tag_expr(expr)
+            .map_err(|e| anyhow::anyhow!("invalid tag expression: {e}"))?;
+    }
+
     let root = project::find_project_root()?;
     let files = project::discover_fact_files(&root)?;
 

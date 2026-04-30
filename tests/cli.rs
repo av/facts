@@ -1954,3 +1954,37 @@ fn add_accepts_valid_relative_file_path() {
     assert!(content.contains("test"));
 }
 
+// ===========================================================================
+// Invalid tag expressions (ISSUE-004)
+// ===========================================================================
+
+#[test]
+fn list_rejects_malformed_tag_expr_trailing_and() {
+    let dir = project("- fact @mvp\n");
+    facts_cmd(&dir)
+        .args(["list", "--tags", "mvp and"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("invalid tag expression"));
+}
+
+#[test]
+fn list_rejects_malformed_tag_expr_unbalanced_parens() {
+    let dir = project("- fact @mvp\n");
+    facts_cmd(&dir)
+        .args(["list", "--tags", "(("])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("invalid tag expression"));
+}
+
+#[test]
+fn check_rejects_empty_tag_expr() {
+    let dir = project("- label: fact\n  command: \"true\"\n  tags: [mvp]\n");
+    facts_cmd(&dir)
+        .args(["check", "--tags", ""])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("invalid tag expression"));
+}
+

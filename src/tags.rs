@@ -3,6 +3,12 @@
 /// Supports: tag names, `and`, `or`, `not`, and parentheses.
 /// Example: "mvp and not blocked"
 
+/// Validate a tag expression, returning an error if it is malformed.
+/// Call this once before the main loop to fail early on bad expressions.
+pub fn validate_tag_expr(expr: &str) -> Result<(), String> {
+    parse_expr(expr).map(|_| ())
+}
+
 /// Check if a set of tags matches a boolean expression.
 pub fn matches_tag_expr(expr: &str, tags: &[String]) -> bool {
     match parse_expr(expr) {
@@ -199,10 +205,20 @@ mod tests {
     }
 
     #[test]
-    fn test_invalid_expression_returns_false() {
-        // Malformed expressions should return false, not panic
-        assert!(!matches_tag_expr("", &tags(&["mvp"])));
-        assert!(!matches_tag_expr("(", &tags(&["mvp"])));
-        assert!(!matches_tag_expr("and", &tags(&["mvp"])));
+    fn test_invalid_expression_detected_by_validate() {
+        // Malformed expressions should be caught by validate_tag_expr
+        assert!(validate_tag_expr("").is_err());
+        assert!(validate_tag_expr("(").is_err());
+        assert!(validate_tag_expr("mvp and").is_err());
+        assert!(validate_tag_expr("((").is_err());
+        assert!(validate_tag_expr("mvp or").is_err());
+    }
+
+    #[test]
+    fn test_valid_expression_passes_validate() {
+        assert!(validate_tag_expr("mvp").is_ok());
+        assert!(validate_tag_expr("mvp and core").is_ok());
+        assert!(validate_tag_expr("not blocked").is_ok());
+        assert!(validate_tag_expr("(mvp or core) and not blocked").is_ok());
     }
 }
