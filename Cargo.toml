@@ -2,6 +2,7 @@
 name = "facts"
 version = "0.1.0"
 edition = "2024"
+description = "A CLI for fact-driven development with coding agents"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }

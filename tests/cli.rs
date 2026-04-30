@@ -1520,3 +1520,17 @@ fn check_with_tags_filter_only_runs_matched() {
         .stdout(predicate::str::contains("done check"))
         .stdout(predicate::str::contains("1 passed"));
 }
+
+// ===========================================================================
+// --version / --help
+// ===========================================================================
+
+#[test]
+fn version_flag_prints_version() {
+    let dir = empty_project();
+    facts_cmd(&dir)
+        .arg("--version")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(env!("CARGO_PKG_VERSION")));
+}
