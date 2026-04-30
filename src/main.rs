@@ -3,6 +3,8 @@ mod check;
 mod color;
 mod edit;
 mod id;
+mod init;
+mod lint;
 mod list;
 mod model;
 mod parser;
@@ -110,6 +112,16 @@ enum Command {
         #[arg(long)]
         tags: Option<String>,
     },
+
+    /// Validate that fact sheets are parseable.
+    Lint {
+        /// Lint a specific file instead of all *.facts files.
+        #[arg(long)]
+        file: Option<String>,
+    },
+
+    /// Scaffold a .facts file with detected project stack.
+    Init,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -182,6 +194,16 @@ fn main() -> anyhow::Result<()> {
                 tags,
             };
             edit::run(&opts)?;
+        }
+        Some(Command::Lint { file }) => {
+            let opts = lint::LintOptions { file };
+            let all_passed = lint::run(&opts)?;
+            if !all_passed {
+                std::process::exit(1);
+            }
+        }
+        Some(Command::Init) => {
+            init::run()?;
         }
         None => {
             let opts = list::ListOptions {
