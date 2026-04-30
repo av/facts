@@ -1313,8 +1313,8 @@ fn cross_file_same_label_different_ids() {
 // ===========================================================================
 
 #[test]
-fn add_plain_fact_with_tags_creates_mapping_with_tags_key() {
-    // Adding a fact with --tags promotes it to a mapping with tags: key
+fn add_plain_fact_with_tags_stays_plain_with_inline_tags() {
+    // Adding a fact with only --tags keeps it as a plain string with inline @tags
     let dir = project("");
     facts_cmd(&dir)
         .args(["add", "tagged fact", "--tags", "mvp,core"])
@@ -1322,11 +1322,10 @@ fn add_plain_fact_with_tags_creates_mapping_with_tags_key() {
         .success();
 
     let content = fs::read_to_string(dir.path().join(".facts")).unwrap();
-    // Should be a mapping with tags: key (not inline @tags)
-    assert!(content.contains("label: tagged fact"));
-    assert!(content.contains("tags: [mvp, core]"));
-    assert!(!content.contains("@mvp"));
-    assert!(!content.contains("@core"));
+    // Should be a plain string with inline @tags (not a mapping)
+    assert_eq!(content, "- tagged fact @mvp @core\n");
+    assert!(!content.contains("label:"));
+    assert!(!content.contains("tags:"));
 }
 
 #[test]
@@ -1358,7 +1357,7 @@ fn mapping_fact_has_tags_in_tags_key() {
 }
 
 #[test]
-fn edit_adds_tags_to_plain_promotes_to_mapping() {
+fn edit_adds_tags_to_plain_keeps_plain_with_inline_tags() {
     let dir = project("- a plain fact\n");
 
     let list_output = facts_cmd(&dir).arg("list").output().unwrap();
@@ -1377,10 +1376,10 @@ fn edit_adds_tags_to_plain_promotes_to_mapping() {
         .success();
 
     let content = fs::read_to_string(dir.path().join(".facts")).unwrap();
-    // Promoted to mapping: tags in tags: key
-    assert!(content.contains("label: a plain fact"));
-    assert!(content.contains("tags: [mvp, core]"));
-    assert!(!content.contains("@mvp"));
+    // Tags alone do NOT promote to mapping — stays plain with inline @tags
+    assert_eq!(content, "- a plain fact @mvp @core\n");
+    assert!(!content.contains("label:"));
+    assert!(!content.contains("tags:"));
 }
 
 #[test]

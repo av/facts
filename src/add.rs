@@ -58,8 +58,10 @@ fn run_in(opts: &AddOptions, root: &Path) -> Result<()> {
         }
     };
 
-    // Determine if this should be a plain string or mapping fact
-    let needs_mapping = opts.command.is_some() || opts.id.is_some() || !opts.tags.is_empty();
+    // Determine if this should be a plain string or mapping fact.
+    // Tags alone do NOT promote to mapping — they go inline as @tag.
+    // Only command or explicit id require a mapping.
+    let needs_mapping = opts.command.is_some() || opts.id.is_some();
     let is_plain = !needs_mapping;
 
     // Build the new fact
@@ -254,11 +256,10 @@ mod tests {
         run_in(&opts, dir.path()).unwrap();
 
         let content = fs::read_to_string(&facts_path).unwrap();
-        // Tags with no command/id -> needs_mapping is true because tags is non-empty
-        // So it becomes a mapping with tags key
+        // Tags alone do NOT promote to mapping — they stay inline as @tag
         assert_eq!(
             content,
-            "- label: a tagged fact\n  tags: [mvp, core]\n"
+            "- a tagged fact @mvp @core\n"
         );
     }
 

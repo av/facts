@@ -122,10 +122,10 @@ fn apply_edits(fact: &mut Fact, opts: &EditOptions) {
         fact.tags = new_tags.clone();
     }
 
-    // Promote plain string to mapping if it now has command, explicit ID, or tags
+    // Promote plain string to mapping if it now has command or explicit ID.
+    // Tags alone do NOT promote — they stay inline as @tag for plain facts.
     if fact.is_plain {
-        let needs_mapping =
-            fact.command.is_some() || fact.explicit_id.is_some() || !fact.tags.is_empty();
+        let needs_mapping = fact.command.is_some() || fact.explicit_id.is_some();
         if needs_mapping {
             fact.is_plain = false;
             // Tags migrate from inline to tags key when fact becomes a mapping
