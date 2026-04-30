@@ -34,6 +34,32 @@ enum CheckStatus {
 /// Format the display path for a fact (file > section > label).
 fn format_display_path(sheet: &FactSheet, section_path: &[String], label: &str) -> String {
     let file_prefix = sheet.display_name();
+    let mut path_parts: Vec<&str> = Vec::new();
+    if !file_prefix.is_empty() {
+        path_parts.push(file_prefix);
+    }
+    for s in section_path {
+        path_parts.push(s.as_str());
+    }
+
+    let dim_sep = color::dim(">");
+
+    if path_parts.is_empty() {
+        label.to_string()
+    } else {
+        let colored_path = path_parts
+            .iter()
+            .map(|p| color::bold(p))
+            .collect::<Vec<_>>()
+            .join(&format!(" {dim_sep} "));
+        format!("{colored_path} {dim_sep} {label}")
+    }
+}
+
+/// Format the display path without color (for test assertions).
+#[cfg(test)]
+fn format_display_path_plain(sheet: &FactSheet, section_path: &[String], label: &str) -> String {
+    let file_prefix = sheet.display_name();
     let mut parts: Vec<&str> = Vec::new();
     if !file_prefix.is_empty() {
         parts.push(file_prefix);
@@ -195,14 +221,21 @@ pub fn run(opts: &CheckOptions) -> Result<bool> {
 
     let has_failures = !failed.is_empty();
 
+    // Compute max ID width for alignment across all groups.
+    let id_width = results.iter().map(|r| r.id.len()).max().unwrap_or(3);
+    // Total indent for detail lines: "  " + marker + " " + padded_id + " "
+    // e.g. "  ✓ abc  " = 2 + 1(marker) + 1(space) + id_width + 2(trailing spaces)
+    let detail_indent = id_width + 6;
+
     // Print passed
     if !passed.is_empty() {
         println!("{}", color::bold(&color::green("passed")));
         for r in &passed {
             if let CheckStatus::Passed { command } = &r.status {
+                let padded_id = format!("{:width$}", r.id, width = id_width);
                 println!(
                     "  {} {} {}",
-                    color::green(&format!("✓ {}", r.id)),
+                    color::green(&format!("✓ {padded_id}")),
                     r.display_path,
                     color::dim(&format!("({command})")),
                 );
@@ -216,24 +249,25 @@ pub fn run(opts: &CheckOptions) -> Result<bool> {
         println!("{}", color::bold(&color::red("failed")));
         for r in &failed {
             if let CheckStatus::Failed { command, exit_code, stderr } = &r.status {
+                let padded_id = format!("{:width$}", r.id, width = id_width);
                 println!(
                     "  {} {}",
-                    color::red(&format!("✗ {}", r.id)),
+                    color::red(&format!("✗ {padded_id}")),
                     r.display_path,
                 );
+                let pad = " ".repeat(detail_indent);
                 println!(
-                    "         {} exit {}",
+                    "{pad}{} exit {exit_code}",
                     color::dim("command:"),
-                    exit_code,
                 );
                 println!(
-                    "         {} {command}",
+                    "{pad}{} {command}",
                     color::dim("ran:"),
                 );
                 if !stderr.is_empty() {
                     for line in stderr.lines() {
                         println!(
-                            "         {} {line}",
+                            "{pad}{} {line}",
                             color::dim("stderr:"),
                         );
                     }
@@ -247,23 +281,24 @@ pub fn run(opts: &CheckOptions) -> Result<bool> {
     if !manual.is_empty() {
         println!("{}", color::bold(&color::yellow("manual")));
         for r in &manual {
+            let padded_id = format!("{:width$}", r.id, width = id_width);
             println!(
                 "  {} {}",
-                color::yellow(&format!("? {}", r.id)),
+                color::yellow(&format!("? {padded_id}")),
                 r.display_path,
             );
         }
         println!();
     }
 
-    // Summary line
+    // Summary line — bold to stand out from the list above
     let summary = format!(
         "{}, {}, {}",
         color::green(&format!("{} passed", passed.len())),
         color::red(&format!("{} failed", failed.len())),
         color::yellow(&format!("{} manual", manual.len())),
     );
-    println!("{summary}");
+    println!("{}", color::bold(&summary));
 
     // Legend
     println!(
@@ -330,7 +365,7 @@ mod tests {
             sections: vec![],
         };
         let path = vec!["cli".to_string(), "check".to_string()];
-        let result = format_display_path(&sheet, &path, "runs commands");
+        let result = format_display_path_plain(&sheet, &path, "runs commands");
         assert_eq!(result, "cli > check > runs commands");
     }
 
@@ -342,7 +377,7 @@ mod tests {
             sections: vec![],
         };
         let path = vec!["check".to_string()];
-        let result = format_display_path(&sheet, &path, "runs commands");
+        let result = format_display_path_plain(&sheet, &path, "runs commands");
         assert_eq!(result, "cli.facts > check > runs commands");
     }
 
@@ -353,7 +388,7 @@ mod tests {
             preamble: vec![],
             sections: vec![],
         };
-        let result = format_display_path(&sheet, &[], "a preamble fact");
+        let result = format_display_path_plain(&sheet, &[], "a preamble fact");
         assert_eq!(result, "a preamble fact");
     }
 }

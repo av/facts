@@ -52,6 +52,9 @@ pub fn run(opts: &ListOptions) -> Result<()> {
 
     let assigned_ids = id::assign_ids(&all_fact_labels);
 
+    // Compute the maximum ID width for alignment.
+    let id_width = assigned_ids.iter().map(|id| id.len()).max().unwrap_or(3);
+
     // Display facts, applying filters post-ID-assignment
     let mut fact_idx = 0;
     for sheet in &sheets {
@@ -95,7 +98,7 @@ pub fn run(opts: &ListOptions) -> Result<()> {
             }
 
             // Format output line
-            let display = format_fact_line(sheet, &path, id, &fact.label);
+            let display = format_fact_line(sheet, &path, id, &fact.label, id_width);
             println!("{display}");
         }
     }
@@ -109,6 +112,7 @@ fn format_fact_line(
     section_path: &[String],
     id: &str,
     label: &str,
+    id_width: usize,
 ) -> String {
     let file_prefix = sheet.display_name();
     let path_parts: Vec<&str> = if file_prefix.is_empty() {
@@ -119,7 +123,9 @@ fn format_fact_line(
         parts
     };
 
-    let dim_id = color::dim(id);
+    // Right-pad the ID so all content after it aligns.
+    let padded_id = format!("{:width$}", id, width = id_width);
+    let dim_id = color::dim(&padded_id);
     let dim_sep = color::dim(">");
 
     if path_parts.is_empty() {
