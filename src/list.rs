@@ -40,44 +40,38 @@ pub fn run(opts: &ListOptions) -> Result<()> {
         sheets.push(sheet);
     }
 
-    // Apply file filter
-    let sheets: Vec<&FactSheet> = sheets
-        .iter()
-        .filter(|s| {
-            if let Some(ref f) = opts.file_filter {
-                s.filename == *f || s.filename == format!("{f}.facts")
-            } else {
-                true
-            }
-        })
-        .collect();
-
-    // Collect all facts across all sheets for ID assignment
+    // Collect ALL facts across ALL sheets for globally-unique ID assignment.
+    // IDs must be computed before any filtering so they stay stable regardless
+    // of --file / --section / --tags flags.
     let mut all_fact_labels: Vec<(String, Option<String>)> = Vec::new();
-    let mut fact_indices: Vec<(usize, Vec<String>)> = Vec::new(); // (sheet_idx_in_filtered, section_path)
-
-    for (sheet_idx, sheet) in sheets.iter().enumerate() {
-        for (path, fact) in sheet.all_facts() {
+    for sheet in &sheets {
+        for (_path, fact) in sheet.all_facts() {
             all_fact_labels.push((fact.label.clone(), fact.explicit_id.clone()));
-            fact_indices.push((sheet_idx, path));
         }
     }
 
     let assigned_ids = id::assign_ids(&all_fact_labels);
 
-    // Display facts
+    // Display facts, applying filters post-ID-assignment
     let mut fact_idx = 0;
-    for (sheet_idx, sheet) in sheets.iter().enumerate() {
-        for (path, fact) in sheet.all_facts() {
-            // Skip facts that don't belong to this sheet
-            while fact_idx < fact_indices.len() && fact_indices[fact_idx].0 != sheet_idx {
-                fact_idx += 1;
-            }
+    for sheet in &sheets {
+        // Apply file filter
+        let file_matches = if let Some(ref f) = opts.file_filter {
+            sheet.filename == *f || sheet.filename == format!("{f}.facts")
+        } else {
+            true
+        };
 
+        for (path, fact) in sheet.all_facts() {
             let id = &assigned_ids[fact_idx];
             fact_idx += 1;
 
-            // Apply filters
+            // Skip entire file if filtered out
+            if !file_matches {
+                continue;
+            }
+
+            // Apply section filter
             if let Some(ref section) = opts.section_filter {
                 let path_str = path.join("/");
                 if !path_str.contains(section.as_str()) {

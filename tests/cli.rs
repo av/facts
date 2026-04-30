@@ -726,3 +726,351 @@ fn add_nested_section() {
     assert!(content.contains("## child"));
     assert!(content.contains("- nested fact"));
 }
+
+// ===========================================================================
+// Edge cases: cross-file ID stability
+// ===========================================================================
+
+#[test]
+fn cross_file_ids_are_globally_unique() {
+    // Two files with identical fact labels — IDs must differ globally
+    let dir = empty_project();
+    fs::write(dir.path().join(".facts"), "- shared label\n").unwrap();
+    fs::write(dir.path().join("other.facts"), "- shared label\n").unwrap();
+
+    let output = facts_cmd(&dir)
+        .arg("list")
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let ids: Vec<&str> = stdout
+        .lines()
+        .filter(|l| l.contains("shared label"))
+        .map(|l| l.split_whitespace().next().unwrap())
+        .collect();
+    assert_eq!(ids.len(), 2, "expected 2 facts, got: {stdout}");
+    assert_ne!(ids[0], ids[1], "IDs must be globally unique: {ids:?}");
+}
+
+#[test]
+fn cross_file_ids_stable_with_file_filter() {
+    // IDs for a fact should be the same whether or not --file is used
+    let dir = empty_project();
+    fs::write(dir.path().join(".facts"), "- unique fact alpha\n").unwrap();
+    fs::write(dir.path().join("other.facts"), "- unique fact beta\n").unwrap();
+
+    // Get ID from unfiltered list
+    let full_output = facts_cmd(&dir)
+        .arg("list")
+        .output()
+        .unwrap();
+    let full_stdout = String::from_utf8_lossy(&full_output.stdout);
+    let full_id = full_stdout
+        .lines()
+        .find(|l| l.contains("unique fact alpha"))
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap()
+        .to_string();
+
+    // Get ID from --file filtered list
+    let filtered_output = facts_cmd(&dir)
+        .args(["list", "--file", ".facts"])
+        .output()
+        .unwrap();
+    let filtered_stdout = String::from_utf8_lossy(&filtered_output.stdout);
+    let filtered_id = filtered_stdout
+        .lines()
+        .find(|l| l.contains("unique fact alpha"))
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap()
+        .to_string();
+
+    assert_eq!(
+        full_id, filtered_id,
+        "ID should be stable regardless of --file filter"
+    );
+}
+
+#[test]
+fn cross_file_list_id_matches_remove_id() {
+    // The ID shown by `list` should work with `remove` even across multiple files
+    let dir = empty_project();
+    fs::write(dir.path().join(".facts"), "- fact in default\n").unwrap();
+    fs::write(
+        dir.path().join("other.facts"),
+        "- fact in other\n",
+    )
+    .unwrap();
+
+    // Get ID from list
+    let list_output = facts_cmd(&dir)
+        .arg("list")
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&list_output.stdout);
+    let id = stdout
+        .lines()
+        .find(|l| l.contains("fact in other"))
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap();
+
+    // Remove using that ID
+    facts_cmd(&dir)
+        .args(["remove", id])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("fact in other"));
+
+    // Verify removal
+    let content = fs::read_to_string(dir.path().join("other.facts")).unwrap();
+    assert!(
+        !content.contains("fact in other"),
+        "fact should have been removed"
+    );
+}
+
+// ===========================================================================
+// Edge cases: empty and minimal files
+// ===========================================================================
+
+#[test]
+fn empty_facts_file_list() {
+    let dir = project("");
+    facts_cmd(&dir)
+        .arg("list")
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty());
+}
+
+#[test]
+fn empty_facts_file_check() {
+    let dir = project("");
+    facts_cmd(&dir)
+        .arg("check")
+        .assert()
+        .success();
+}
+
+#[test]
+fn empty_facts_file_lint() {
+    let dir = project("");
+    facts_cmd(&dir)
+        .arg("lint")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("passed"));
+}
+
+#[test]
+fn headings_only_no_facts() {
+    let dir = project("# section one\n\n## subsection\n\n# section two\n");
+    facts_cmd(&dir)
+        .arg("list")
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty());
+}
+
+#[test]
+fn headings_only_check() {
+    let dir = project("# section one\n\n## subsection\n");
+    facts_cmd(&dir)
+        .arg("check")
+        .assert()
+        .success();
+}
+
+#[test]
+fn headings_only_lint() {
+    let dir = project("# section one\n\n## subsection\n");
+    facts_cmd(&dir)
+        .arg("lint")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("passed"));
+}
+
+// ===========================================================================
+// Edge cases: deeply nested sections (3+ levels)
+// ===========================================================================
+
+#[test]
+fn deeply_nested_section_list() {
+    let dir = project(
+        "# level1\n\n## level2\n\n### level3\n\n#### level4\n\n- deep fact\n",
+    );
+    facts_cmd(&dir)
+        .arg("list")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("level1"))
+        .stdout(predicate::str::contains("level2"))
+        .stdout(predicate::str::contains("level3"))
+        .stdout(predicate::str::contains("level4"))
+        .stdout(predicate::str::contains("deep fact"));
+}
+
+#[test]
+fn deeply_nested_section_check() {
+    let dir = project(
+        "# l1\n\n## l2\n\n### l3\n\n- label: deep cmd\n  command: \"true\"\n",
+    );
+    facts_cmd(&dir)
+        .arg("check")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("l1 > l2 > l3 > deep cmd"));
+}
+
+#[test]
+fn add_to_deeply_nested_section() {
+    let dir = project("");
+    facts_cmd(&dir)
+        .args(["add", "deep fact", "--section", "a/b/c"])
+        .assert()
+        .success();
+
+    let content = fs::read_to_string(dir.path().join(".facts")).unwrap();
+    assert!(content.contains("# a"));
+    assert!(content.contains("## b"));
+    assert!(content.contains("### c"));
+    assert!(content.contains("- deep fact"));
+}
+
+// ===========================================================================
+// Edge cases: special characters
+// ===========================================================================
+
+#[test]
+fn fact_label_with_colon() {
+    // A plain fact with a colon should NOT be treated as a mapping
+    let dir = project("- note: this has a colon in it\n");
+    facts_cmd(&dir)
+        .arg("list")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("note: this has a colon in it"));
+}
+
+#[test]
+fn command_with_pipe() {
+    let dir = project("- label: pipe cmd\n  command: echo hello | grep hello\n");
+    facts_cmd(&dir)
+        .arg("check")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("pipe cmd"))
+        .stdout(predicate::str::contains("1 passed"));
+}
+
+#[test]
+fn command_with_redirect() {
+    let dir = project("- label: redirect cmd\n  command: echo ok > /dev/null && true\n");
+    facts_cmd(&dir)
+        .arg("check")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("1 passed"));
+}
+
+#[test]
+fn command_with_semicolons() {
+    let dir = project("- label: multi cmd\n  command: echo a; echo b; true\n");
+    facts_cmd(&dir)
+        .arg("check")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("1 passed"));
+}
+
+// ===========================================================================
+// Edge cases: multiple files aggregation
+// ===========================================================================
+
+#[test]
+fn check_aggregates_across_files() {
+    let dir = empty_project();
+    fs::write(
+        dir.path().join(".facts"),
+        "- label: default pass\n  command: \"true\"\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("extra.facts"),
+        "- label: extra pass\n  command: \"true\"\n",
+    )
+    .unwrap();
+
+    facts_cmd(&dir)
+        .arg("check")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("2 passed"));
+}
+
+#[test]
+fn lint_aggregates_across_files() {
+    let dir = empty_project();
+    fs::write(dir.path().join(".facts"), "- fact one\n").unwrap();
+    fs::write(dir.path().join("extra.facts"), "- fact two\n").unwrap();
+
+    facts_cmd(&dir)
+        .arg("lint")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("2 files passed"));
+}
+
+// ===========================================================================
+// Edge cases: complex boolean tag expressions
+// ===========================================================================
+
+#[test]
+fn tags_complex_boolean_or_and_not() {
+    let dir = project(
+        "- fact a @mvp @core\n- fact b @mvp\n- fact c @core\n- fact d @blocked\n",
+    );
+    // (mvp or core) and not blocked
+    facts_cmd(&dir)
+        .args(["list", "--tags", "(mvp or core) and not blocked"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("fact a"))
+        .stdout(predicate::str::contains("fact b"))
+        .stdout(predicate::str::contains("fact c"))
+        .stdout(predicate::str::contains("fact d").not());
+}
+
+#[test]
+fn tags_double_not() {
+    let dir = project("- fact one @mvp\n- fact two\n");
+    // not not mvp => mvp
+    facts_cmd(&dir)
+        .args(["list", "--tags", "not not mvp"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("fact one"))
+        .stdout(predicate::str::contains("fact two").not());
+}
+
+#[test]
+fn tags_nested_parens() {
+    let dir = project(
+        "- fact a @x @y\n- fact b @x @z\n- fact c @y @z\n",
+    );
+    // x and (y or z) — should match a (x+y), b (x+z), but not c (no x)
+    facts_cmd(&dir)
+        .args(["list", "--tags", "x and (y or z)"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("fact a"))
+        .stdout(predicate::str::contains("fact b"))
+        .stdout(predicate::str::contains("fact c").not());
+}

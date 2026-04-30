@@ -163,6 +163,25 @@ mod tests {
     }
 
     #[test]
+    fn test_assign_ids_empty_input() {
+        let facts: Vec<(String, Option<String>)> = vec![];
+        let ids = assign_ids(&facts);
+        assert!(ids.is_empty());
+    }
+
+    #[test]
+    fn test_assign_ids_many_duplicates() {
+        // Many identical labels should all get unique IDs
+        let facts: Vec<(String, Option<String>)> = (0..10)
+            .map(|_| ("same label".to_string(), None))
+            .collect();
+        let ids = assign_ids(&facts);
+        assert_eq!(ids.len(), 10);
+        let unique: std::collections::HashSet<_> = ids.iter().collect();
+        assert_eq!(unique.len(), 10, "all IDs must be unique: {ids:?}");
+    }
+
+    #[test]
     fn test_encode_length_is_exact() {
         let h = full_hash("test");
         assert_eq!(encode_base36(h, 3).len(), 3);

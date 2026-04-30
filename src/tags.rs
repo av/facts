@@ -168,4 +168,41 @@ mod tests {
             &tags(&["mvp", "core"])
         ));
     }
+
+    #[test]
+    fn test_complex_expression() {
+        // (a or b) and not c
+        assert!(matches_tag_expr(
+            "(a or b) and not c",
+            &tags(&["a", "d"])
+        ));
+        assert!(!matches_tag_expr(
+            "(a or b) and not c",
+            &tags(&["a", "c"])
+        ));
+        assert!(!matches_tag_expr(
+            "(a or b) and not c",
+            &tags(&["d"])
+        ));
+    }
+
+    #[test]
+    fn test_double_not() {
+        assert!(matches_tag_expr("not not mvp", &tags(&["mvp"])));
+        assert!(!matches_tag_expr("not not mvp", &tags(&["core"])));
+    }
+
+    #[test]
+    fn test_empty_tags() {
+        assert!(!matches_tag_expr("mvp", &tags(&[])));
+        assert!(matches_tag_expr("not mvp", &tags(&[])));
+    }
+
+    #[test]
+    fn test_invalid_expression_returns_false() {
+        // Malformed expressions should return false, not panic
+        assert!(!matches_tag_expr("", &tags(&["mvp"])));
+        assert!(!matches_tag_expr("(", &tags(&["mvp"])));
+        assert!(!matches_tag_expr("and", &tags(&["mvp"])));
+    }
 }

@@ -436,6 +436,67 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_empty_file() {
+        let sheet = parse("", ".facts").unwrap();
+        assert!(sheet.preamble.is_empty());
+        assert!(sheet.sections.is_empty());
+    }
+
+    #[test]
+    fn test_parse_headings_only() {
+        let content = "# section one\n\n## subsection\n\n# section two\n";
+        let sheet = parse(content, ".facts").unwrap();
+        assert!(sheet.preamble.is_empty());
+        assert_eq!(sheet.sections.len(), 2);
+        assert_eq!(sheet.sections[0].title, "section one");
+        assert_eq!(sheet.sections[0].facts.len(), 0);
+        assert_eq!(sheet.sections[0].children.len(), 1);
+        assert_eq!(sheet.sections[1].title, "section two");
+        assert_eq!(sheet.sections[1].facts.len(), 0);
+    }
+
+    #[test]
+    fn test_parse_deeply_nested_sections() {
+        let content = "# l1\n\n## l2\n\n### l3\n\n#### l4\n\n- deep fact\n";
+        let sheet = parse(content, ".facts").unwrap();
+        assert_eq!(sheet.sections.len(), 1);
+        let l1 = &sheet.sections[0];
+        assert_eq!(l1.title, "l1");
+        assert_eq!(l1.children.len(), 1);
+        let l2 = &l1.children[0];
+        assert_eq!(l2.title, "l2");
+        assert_eq!(l2.children.len(), 1);
+        let l3 = &l2.children[0];
+        assert_eq!(l3.title, "l3");
+        assert_eq!(l3.children.len(), 1);
+        let l4 = &l3.children[0];
+        assert_eq!(l4.title, "l4");
+        assert_eq!(l4.facts.len(), 1);
+        assert_eq!(l4.facts[0].label, "deep fact");
+    }
+
+    #[test]
+    fn test_parse_colon_in_plain_label() {
+        // A plain fact with "note:" at the start — should be plain, not a mapping,
+        // because "note" is not a known mapping key.
+        let content = "- note: this has a colon\n";
+        let sheet = parse(content, ".facts").unwrap();
+        assert_eq!(sheet.preamble.len(), 1);
+        assert_eq!(sheet.preamble[0].label, "note: this has a colon");
+        assert!(sheet.preamble[0].is_plain);
+    }
+
+    #[test]
+    fn test_parse_command_with_pipe() {
+        let content = "- label: pipe cmd\n  command: echo hello | grep hello\n";
+        let sheet = parse(content, ".facts").unwrap();
+        assert_eq!(
+            sheet.preamble[0].command.as_deref(),
+            Some("echo hello | grep hello")
+        );
+    }
+
+    #[test]
     fn test_parse_full_file() {
         let content = r#"# facts
 
