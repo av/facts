@@ -87,6 +87,7 @@
 - scaffolds initial facts based on detected stack
 
 ### check
+- lints all files first — aborts early on lint errors
 - groups output by status: passed, failed, manual
 - each fact line shows ID and full path (file > section > label)
 - file prefix omitted for .facts (default), shown for other files
@@ -127,6 +128,9 @@
 ### edit
 - takes an ID as argument
 - --label, --command, --id, --tags flags modify respective fields
+- --add-tag appends tags without removing existing ones
+- --remove-tag removes specific tags
+- --tags conflicts with --add-tag and --remove-tag
 - preserves explicit id when changing other fields
 - when a plain string fact gains a command or id, it becomes a mapping
 - tags migrate from inline to tags key when fact becomes a mapping
@@ -184,15 +188,18 @@
 - source is in ./skills/facts/
 
 ### facts-discover
-- instructs agent to scan the codebase and maintain the fact sheet
-- fully autonomous — adds, edits, and removes facts to match reality
-- resolves inconsistencies between fact sheet and codebase
-- removes obsolete facts, adds newly discovered ones
+- instructs agent to scan the codebase and make the fact sheet an accurate mirror of reality
+- uses subagents to scan different areas of the codebase in parallel
+- adds, edits, and removes facts to match what is actually true now
+- only records what is — not what should be
+- reports what changed at the end
 - source is in ./skills/facts-discover/
 
 ### facts-implement
-- instructs agent to read the fact sheet as a spec
-- agent infers dependency order and works through facts sequentially
-- implements what each fact describes in code
-- marks completed facts with @implemented tag
+- instructs agent to read the fact sheet as a spec and implement all unimplemented facts
+- agent decides order and priority based on its understanding of the codebase
+- uses subagents to parallelize independent work
+- validation commands are the tests — no separate test step
+- marks completed facts with @implemented tag using --add-tag
+- reports remaining work and blockers if it cannot complete everything
 - source is in ./skills/facts-implement/

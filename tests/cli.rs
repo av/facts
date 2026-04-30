@@ -1522,6 +1522,150 @@ fn check_with_tags_filter_only_runs_matched() {
 }
 
 // ===========================================================================
+// edit --add-tag / --remove-tag
+// ===========================================================================
+
+#[test]
+fn edit_add_tag_appends() {
+    let dir = project("- label: tagged fact\n  tags: [existing]\n");
+
+    let list_output = facts_cmd(&dir).arg("list").output().unwrap();
+    let stdout = String::from_utf8_lossy(&list_output.stdout);
+    let id = stdout
+        .lines()
+        .find(|l| l.contains("tagged fact"))
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap();
+
+    facts_cmd(&dir)
+        .args(["edit", id, "--add-tag", "new"])
+        .assert()
+        .success();
+
+    let content = fs::read_to_string(dir.path().join(".facts")).unwrap();
+    assert!(content.contains("tags: [existing, new]"));
+}
+
+#[test]
+fn edit_add_tag_deduplicates() {
+    let dir = project("- label: tagged fact\n  tags: [existing]\n");
+
+    let list_output = facts_cmd(&dir).arg("list").output().unwrap();
+    let stdout = String::from_utf8_lossy(&list_output.stdout);
+    let id = stdout
+        .lines()
+        .find(|l| l.contains("tagged fact"))
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap();
+
+    facts_cmd(&dir)
+        .args(["edit", id, "--add-tag", "existing"])
+        .assert()
+        .success();
+
+    let content = fs::read_to_string(dir.path().join(".facts")).unwrap();
+    assert!(content.contains("tags: [existing]"));
+    assert!(!content.contains("tags: [existing, existing]"));
+}
+
+#[test]
+fn edit_remove_tag() {
+    let dir = project("- label: tagged fact\n  tags: [keep, drop]\n");
+
+    let list_output = facts_cmd(&dir).arg("list").output().unwrap();
+    let stdout = String::from_utf8_lossy(&list_output.stdout);
+    let id = stdout
+        .lines()
+        .find(|l| l.contains("tagged fact"))
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap();
+
+    facts_cmd(&dir)
+        .args(["edit", id, "--remove-tag", "drop"])
+        .assert()
+        .success();
+
+    let content = fs::read_to_string(dir.path().join(".facts")).unwrap();
+    assert!(content.contains("tags: [keep]"));
+    assert!(!content.contains("drop"));
+}
+
+#[test]
+fn edit_add_tag_to_untagged_plain_fact() {
+    let dir = project("- a plain fact\n");
+
+    let list_output = facts_cmd(&dir).arg("list").output().unwrap();
+    let stdout = String::from_utf8_lossy(&list_output.stdout);
+    let id = stdout
+        .lines()
+        .find(|l| l.contains("a plain fact"))
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap();
+
+    facts_cmd(&dir)
+        .args(["edit", id, "--add-tag", "implemented"])
+        .assert()
+        .success();
+
+    let content = fs::read_to_string(dir.path().join(".facts")).unwrap();
+    assert!(content.contains("a plain fact @implemented"));
+}
+
+#[test]
+fn edit_tags_conflicts_with_add_tag() {
+    let dir = project("- a fact\n");
+
+    let list_output = facts_cmd(&dir).arg("list").output().unwrap();
+    let stdout = String::from_utf8_lossy(&list_output.stdout);
+    let id = stdout
+        .lines()
+        .find(|l| l.contains("a fact"))
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap();
+
+    facts_cmd(&dir)
+        .args(["edit", id, "--tags", "a", "--add-tag", "b"])
+        .assert()
+        .failure();
+}
+
+// ===========================================================================
+// check runs lint first
+// ===========================================================================
+
+#[test]
+fn check_fails_on_lint_errors() {
+    let dir = project("- label: ok\n  priority: high\n");
+    facts_cmd(&dir)
+        .arg("check")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("unknown key"))
+        .stderr(predicate::str::contains("fix lint errors first"));
+}
+
+#[test]
+fn check_passes_lint_warnings() {
+    // Mixed tags is a warning, not an error — check should proceed
+    let dir = project("- label: ok @tag\n  tags: [other]\n  command: \"true\"\n");
+    facts_cmd(&dir)
+        .arg("check")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("1 passed"));
+}
+
+// ===========================================================================
 // --version / --help
 // ===========================================================================
 

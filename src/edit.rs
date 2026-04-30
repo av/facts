@@ -21,8 +21,12 @@ pub struct EditOptions {
     pub command: Option<String>,
     /// New explicit ID (replaces existing).
     pub new_id: Option<String>,
-    /// New tags (replaces existing).
+    /// New tags (replaces all existing).
     pub tags: Option<Vec<String>>,
+    /// Tags to add (appended to existing, deduplicated).
+    pub add_tags: Option<Vec<String>>,
+    /// Tags to remove.
+    pub remove_tags: Option<Vec<String>>,
 }
 
 /// Run the edit subcommand (auto-detects project root).
@@ -122,6 +126,18 @@ fn apply_edits(fact: &mut Fact, opts: &EditOptions) {
         fact.tags = new_tags.clone();
     }
 
+    if let Some(ref tags_to_add) = opts.add_tags {
+        for tag in tags_to_add {
+            if !fact.tags.contains(tag) {
+                fact.tags.push(tag.clone());
+            }
+        }
+    }
+
+    if let Some(ref tags_to_remove) = opts.remove_tags {
+        fact.tags.retain(|t| !tags_to_remove.contains(t));
+    }
+
     // Promote plain string to mapping if it now has command or explicit ID.
     // Tags alone do NOT promote — they stay inline as @tag for plain facts.
     if fact.is_plain {
@@ -176,6 +192,8 @@ mod tests {
             command: None,
             new_id: None,
             tags: None,
+            add_tags: None,
+            remove_tags: None,
         };
         run_in(&opts, dir.path()).unwrap();
 
@@ -196,6 +214,8 @@ mod tests {
             command: Some("echo new".to_string()),
             new_id: None,
             tags: None,
+            add_tags: None,
+            remove_tags: None,
         };
         run_in(&opts, dir.path()).unwrap();
 
@@ -216,12 +236,99 @@ mod tests {
             command: None,
             new_id: None,
             tags: Some(vec!["new1".to_string(), "new2".to_string()]),
+            add_tags: None,
+            remove_tags: None,
         };
         run_in(&opts, dir.path()).unwrap();
 
         let result = fs::read_to_string(&facts_path).unwrap();
         assert!(result.contains("tags: [new1, new2]"));
         assert!(!result.contains("old"));
+    }
+
+    #[test]
+    fn test_add_tag() {
+        let content = "- label: tagged fact\n  tags: [existing]\n";
+        let (dir, facts_path) = setup_test_dir(content);
+
+        let target_id = find_id_for_label(content, "tagged fact");
+        let opts = EditOptions {
+            target_id,
+            label: None,
+            command: None,
+            new_id: None,
+            tags: None,
+            add_tags: Some(vec!["new".to_string()]),
+            remove_tags: None,
+        };
+        run_in(&opts, dir.path()).unwrap();
+
+        let result = fs::read_to_string(&facts_path).unwrap();
+        assert!(result.contains("tags: [existing, new]"));
+    }
+
+    #[test]
+    fn test_add_tag_deduplicates() {
+        let content = "- label: tagged fact\n  tags: [existing]\n";
+        let (dir, facts_path) = setup_test_dir(content);
+
+        let target_id = find_id_for_label(content, "tagged fact");
+        let opts = EditOptions {
+            target_id,
+            label: None,
+            command: None,
+            new_id: None,
+            tags: None,
+            add_tags: Some(vec!["existing".to_string()]),
+            remove_tags: None,
+        };
+        run_in(&opts, dir.path()).unwrap();
+
+        let result = fs::read_to_string(&facts_path).unwrap();
+        assert!(result.contains("tags: [existing]"));
+    }
+
+    #[test]
+    fn test_remove_tag() {
+        let content = "- label: tagged fact\n  tags: [keep, remove]\n";
+        let (dir, facts_path) = setup_test_dir(content);
+
+        let target_id = find_id_for_label(content, "tagged fact");
+        let opts = EditOptions {
+            target_id,
+            label: None,
+            command: None,
+            new_id: None,
+            tags: None,
+            add_tags: None,
+            remove_tags: Some(vec!["remove".to_string()]),
+        };
+        run_in(&opts, dir.path()).unwrap();
+
+        let result = fs::read_to_string(&facts_path).unwrap();
+        assert!(result.contains("tags: [keep]"));
+        assert!(!result.contains("remove"));
+    }
+
+    #[test]
+    fn test_add_tag_to_plain_fact() {
+        let content = "- a plain fact\n";
+        let (dir, facts_path) = setup_test_dir(content);
+
+        let target_id = find_id_for_label(content, "a plain fact");
+        let opts = EditOptions {
+            target_id,
+            label: None,
+            command: None,
+            new_id: None,
+            tags: None,
+            add_tags: Some(vec!["implemented".to_string()]),
+            remove_tags: None,
+        };
+        run_in(&opts, dir.path()).unwrap();
+
+        let result = fs::read_to_string(&facts_path).unwrap();
+        assert!(result.contains("a plain fact @implemented"));
     }
 
     #[test]
@@ -236,6 +343,8 @@ mod tests {
             command: Some("echo check".to_string()),
             new_id: None,
             tags: None,
+            add_tags: None,
+            remove_tags: None,
         };
         run_in(&opts, dir.path()).unwrap();
 
@@ -257,6 +366,8 @@ mod tests {
             command: None,
             new_id: Some("myid".to_string()),
             tags: None,
+            add_tags: None,
+            remove_tags: None,
         };
         run_in(&opts, dir.path()).unwrap();
 
@@ -277,6 +388,8 @@ mod tests {
             command: None,
             new_id: None,
             tags: None,
+            add_tags: None,
+            remove_tags: None,
         };
         run_in(&opts, dir.path()).unwrap();
 
@@ -297,6 +410,8 @@ mod tests {
             command: None,
             new_id: None,
             tags: None,
+            add_tags: None,
+            remove_tags: None,
         };
         let result = run_in(&opts, dir.path());
         assert!(result.is_err());
@@ -316,6 +431,8 @@ mod tests {
             command: Some("echo check".to_string()),
             new_id: None,
             tags: None,
+            add_tags: None,
+            remove_tags: None,
         };
         run_in(&opts, dir.path()).unwrap();
 
@@ -339,6 +456,8 @@ mod tests {
             command: None,
             new_id: None,
             tags: None,
+            add_tags: None,
+            remove_tags: None,
         };
         run_in(&opts, dir.path()).unwrap();
 

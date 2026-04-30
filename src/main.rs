@@ -109,9 +109,17 @@ enum Command {
         #[arg(long, name = "new-id")]
         new_id: Option<String>,
 
-        /// New tags (comma-separated, e.g. "mvp,core").
-        #[arg(long)]
+        /// New tags (comma-separated, e.g. "mvp,core"). Replaces all existing tags.
+        #[arg(long, conflicts_with_all = ["add-tag", "remove-tag"])]
         tags: Option<String>,
+
+        /// Add tags without removing existing ones (comma-separated).
+        #[arg(long, name = "add-tag")]
+        add_tag: Option<String>,
+
+        /// Remove specific tags (comma-separated).
+        #[arg(long, name = "remove-tag")]
+        remove_tag: Option<String>,
     },
 
     /// Validate that fact sheets are parseable.
@@ -185,14 +193,20 @@ fn main() -> anyhow::Result<()> {
             command,
             new_id,
             tags,
+            add_tag,
+            remove_tag,
         }) => {
             let tags = tags.map(|t| add::parse_tags(&t));
+            let add_tags = add_tag.map(|t| add::parse_tags(&t));
+            let remove_tags = remove_tag.map(|t| add::parse_tags(&t));
             let opts = edit::EditOptions {
                 target_id: id,
                 label,
                 command,
                 new_id,
                 tags,
+                add_tags,
+                remove_tags,
             };
             edit::run(&opts)?;
         }

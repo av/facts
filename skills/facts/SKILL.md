@@ -91,7 +91,7 @@ Flags:
 
 ### `facts check`
 
-Run all command-facts and report pass/fail/manual.
+Run all command-facts and report pass/fail/manual. Lints all files first — check aborts early on lint errors.
 
 ```
 facts check
@@ -139,6 +139,8 @@ Modify a fact by its ID.
 facts edit abc --label "new label"
 facts edit abc --command "new command"
 facts edit abc --tags "tag1,tag2"
+facts edit abc --add-tag "implemented"
+facts edit abc --remove-tag "blocked"
 facts edit abc --new-id custom-id
 ```
 
@@ -146,7 +148,11 @@ Flags:
 - `--label` — new label text
 - `--command` — new validation command
 - `--new-id` — new explicit ID
-- `--tags` — new tags (comma-separated)
+- `--tags` — new tags (comma-separated, replaces all existing tags)
+- `--add-tag` — add tags without removing existing ones (comma-separated)
+- `--remove-tag` — remove specific tags (comma-separated)
+
+`--tags` cannot be combined with `--add-tag` or `--remove-tag`.
 
 Plain string facts are promoted to mappings when they gain a command, id, or tags via edit.
 

@@ -7,6 +7,7 @@ use anyhow::{Context, Result};
 
 use crate::color;
 use crate::id;
+use crate::lint;
 use crate::model::FactSheet;
 use crate::parser;
 use crate::project;
@@ -147,6 +148,38 @@ pub fn run(opts: &CheckOptions) -> Result<bool> {
     if files.is_empty() {
         eprintln!("no .facts files found in {}", root.display());
         return Ok(true);
+    }
+
+    // Lint all files first — fail early on structural errors.
+    let mut lint_errors = false;
+    for path in &files {
+        let content = std::fs::read_to_string(path)
+            .with_context(|| format!("failed to read {}", path.display()))?;
+        let filename = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(".facts");
+        let diags = lint::lint_content(&content, filename);
+        for diag in &diags {
+            if diag.severity == lint::Severity::Error {
+                let location = if let Some(line) = diag.line {
+                    format!("{}:{}", diag.file, line)
+                } else {
+                    diag.file.clone()
+                };
+                eprintln!(
+                    "{}: {}: {}",
+                    color::bold(&location),
+                    color::red("error"),
+                    diag.message
+                );
+                lint_errors = true;
+            }
+        }
+    }
+    if lint_errors {
+        eprintln!("\n{}", color::red("check aborted — fix lint errors first"));
+        return Ok(false);
     }
 
     let mut sheets = Vec::new();
