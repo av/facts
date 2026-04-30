@@ -1,0 +1,406 @@
+/// The `edit` subcommand — modify a fact by ID.
+
+use std::path::Path;
+
+use anyhow::{Context, Result};
+
+use crate::id;
+use crate::model::{Fact, FactSheet, Section};
+use crate::parser;
+use crate::project;
+use crate::writer;
+
+/// Options for the edit subcommand.
+pub struct EditOptions {
+    /// The ID of the fact to edit.
+    pub target_id: String,
+    /// New label (replaces existing).
+    pub label: Option<String>,
+    /// New command (replaces existing).
+    pub command: Option<String>,
+    /// New explicit ID (replaces existing).
+    pub new_id: Option<String>,
+    /// New tags (replaces existing).
+    pub tags: Option<Vec<String>>,
+}
+
+/// Run the edit subcommand (auto-detects project root).
+pub fn run(opts: &EditOptions) -> Result<()> {
+    let root = project::find_project_root()?;
+    run_in(opts, &root)
+}
+
+/// Run the edit subcommand in a given root directory.
+pub fn run_in(opts: &EditOptions, root: &Path) -> Result<()> {
+    let files = project::discover_fact_files(root)?;
+
+    if files.is_empty() {
+        anyhow::bail!("no .facts files found in {}", root.display());
+    }
+
+    // Parse all sheets
+    let mut sheets: Vec<(std::path::PathBuf, FactSheet)> = Vec::new();
+    for path in &files {
+        let content = std::fs::read_to_string(path)
+            .with_context(|| format!("failed to read {}", path.display()))?;
+        let filename = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(".facts");
+        let sheet = parser::parse(&content, filename)
+            .with_context(|| format!("failed to parse {}", path.display()))?;
+        sheets.push((path.clone(), sheet));
+    }
+
+    // Collect all fact labels for ID assignment
+    let mut all_fact_labels: Vec<(String, Option<String>)> = Vec::new();
+    let mut fact_locations: Vec<(usize, FactLocation)> = Vec::new();
+
+    for (sheet_idx, (_, sheet)) in sheets.iter().enumerate() {
+        for (fact_idx, fact) in sheet.preamble.iter().enumerate() {
+            all_fact_labels.push((fact.label.clone(), fact.explicit_id.clone()));
+            fact_locations.push((sheet_idx, FactLocation::Preamble(fact_idx)));
+        }
+        collect_section_locations(
+            sheet_idx,
+            &sheet.sections,
+            &[],
+            &mut all_fact_labels,
+            &mut fact_locations,
+        );
+    }
+
+    let assigned_ids = id::assign_ids(&all_fact_labels);
+
+    // Find the fact matching the target ID
+    let match_idx = assigned_ids
+        .iter()
+        .position(|id| *id == opts.target_id)
+        .ok_or_else(|| anyhow::anyhow!("no fact found with ID '{}'", opts.target_id))?;
+
+    let (sheet_idx, ref location) = fact_locations[match_idx];
+    let (ref file_path, ref mut sheet) = sheets[sheet_idx];
+
+    // Get the fact and apply edits
+    let fact = get_fact_mut(sheet, location);
+    apply_edits(fact, opts);
+
+    // Regenerate raw representation
+    let fact = get_fact_mut(sheet, location);
+    fact.raw = writer::fact_to_raw(fact);
+
+    // Write back
+    let output = writer::write(sheet);
+    std::fs::write(file_path, &output)
+        .with_context(|| format!("failed to write {}", file_path.display()))?;
+
+    Ok(())
+}
+
+/// Apply edits to a fact based on the options.
+fn apply_edits(fact: &mut Fact, opts: &EditOptions) {
+    // Track the original explicit_id to preserve it
+    let original_explicit_id = fact.explicit_id.clone();
+
+    if let Some(ref new_label) = opts.label {
+        fact.label = new_label.clone();
+    }
+
+    if let Some(ref new_command) = opts.command {
+        fact.command = Some(new_command.clone());
+    }
+
+    if let Some(ref new_id) = opts.new_id {
+        fact.explicit_id = Some(new_id.clone());
+    } else {
+        // Preserve existing explicit ID when editing other fields
+        fact.explicit_id = original_explicit_id;
+    }
+
+    if let Some(ref new_tags) = opts.tags {
+        fact.tags = new_tags.clone();
+    }
+
+    // Promote plain string to mapping if it now has command, explicit ID, or tags
+    if fact.is_plain {
+        let needs_mapping =
+            fact.command.is_some() || fact.explicit_id.is_some() || !fact.tags.is_empty();
+        if needs_mapping {
+            fact.is_plain = false;
+            // Tags migrate from inline to tags key when fact becomes a mapping
+            // (this is handled by fact_to_raw which uses tags key for mappings)
+        }
+    }
+}
+
+/// Location of a fact within a FactSheet.
+#[derive(Debug, Clone)]
+enum FactLocation {
+    Preamble(usize),
+    Section(Vec<usize>, usize),
+}
+
+/// Recursively collect fact locations from sections.
+fn collect_section_locations(
+    sheet_idx: usize,
+    sections: &[Section],
+    parent_indices: &[usize],
+    all_labels: &mut Vec<(String, Option<String>)>,
+    locations: &mut Vec<(usize, FactLocation)>,
+) {
+    for (sec_idx, section) in sections.iter().enumerate() {
+        let mut path = parent_indices.to_vec();
+        path.push(sec_idx);
+        for (fact_idx, fact) in section.facts.iter().enumerate() {
+            all_labels.push((fact.label.clone(), fact.explicit_id.clone()));
+            locations.push((sheet_idx, FactLocation::Section(path.clone(), fact_idx)));
+        }
+        collect_section_locations(
+            sheet_idx,
+            &section.children,
+            &path,
+            all_labels,
+            locations,
+        );
+    }
+}
+
+/// Get a mutable reference to a fact at a given location.
+fn get_fact_mut<'a>(sheet: &'a mut FactSheet, location: &FactLocation) -> &'a mut Fact {
+    match location {
+        FactLocation::Preamble(idx) => &mut sheet.preamble[*idx],
+        FactLocation::Section(path, fact_idx) => {
+            let section = navigate_to_section_mut(&mut sheet.sections, path);
+            &mut section.facts[*fact_idx]
+        }
+    }
+}
+
+/// Navigate to a mutable section by index path.
+fn navigate_to_section_mut<'a>(sections: &'a mut [Section], path: &[usize]) -> &'a mut Section {
+    let mut current = &mut sections[path[0]];
+    for &idx in &path[1..] {
+        current = &mut current.children[idx];
+    }
+    current
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    fn setup_test_dir(content: &str) -> (TempDir, std::path::PathBuf) {
+        let dir = TempDir::new().unwrap();
+        let facts_path = dir.path().join(".facts");
+        fs::write(&facts_path, content).unwrap();
+        fs::create_dir(dir.path().join(".git")).unwrap();
+        (dir, facts_path)
+    }
+
+    fn find_id_for_label(content: &str, label: &str) -> String {
+        let sheet = parser::parse(content, ".facts").unwrap();
+        let all_facts = sheet.all_facts();
+        let labels: Vec<(String, Option<String>)> = all_facts
+            .iter()
+            .map(|(_, f)| (f.label.clone(), f.explicit_id.clone()))
+            .collect();
+        let ids = id::assign_ids(&labels);
+        for (i, (_, fact)) in all_facts.iter().enumerate() {
+            if fact.label == label {
+                return ids[i].clone();
+            }
+        }
+        panic!("label '{label}' not found");
+    }
+
+    #[test]
+    fn test_edit_label() {
+        let content = "- original label\n";
+        let (dir, facts_path) = setup_test_dir(content);
+
+        let target_id = find_id_for_label(content, "original label");
+        let opts = EditOptions {
+            target_id,
+            label: Some("new label".to_string()),
+            command: None,
+            new_id: None,
+            tags: None,
+        };
+        run_in(&opts, dir.path()).unwrap();
+
+        let result = fs::read_to_string(&facts_path).unwrap();
+        assert!(result.contains("new label"));
+        assert!(!result.contains("original label"));
+    }
+
+    #[test]
+    fn test_edit_command() {
+        let content = "- label: test fact\n  command: echo old\n";
+        let (dir, facts_path) = setup_test_dir(content);
+
+        let target_id = find_id_for_label(content, "test fact");
+        let opts = EditOptions {
+            target_id,
+            label: None,
+            command: Some("echo new".to_string()),
+            new_id: None,
+            tags: None,
+        };
+        run_in(&opts, dir.path()).unwrap();
+
+        let result = fs::read_to_string(&facts_path).unwrap();
+        assert!(result.contains("echo new"));
+        assert!(!result.contains("echo old"));
+    }
+
+    #[test]
+    fn test_edit_tags() {
+        let content = "- label: tagged fact\n  tags: [old]\n";
+        let (dir, facts_path) = setup_test_dir(content);
+
+        let target_id = find_id_for_label(content, "tagged fact");
+        let opts = EditOptions {
+            target_id,
+            label: None,
+            command: None,
+            new_id: None,
+            tags: Some(vec!["new1".to_string(), "new2".to_string()]),
+        };
+        run_in(&opts, dir.path()).unwrap();
+
+        let result = fs::read_to_string(&facts_path).unwrap();
+        assert!(result.contains("tags: [new1, new2]"));
+        assert!(!result.contains("old"));
+    }
+
+    #[test]
+    fn test_edit_plain_to_mapping_with_command() {
+        let content = "- a plain fact\n";
+        let (dir, facts_path) = setup_test_dir(content);
+
+        let target_id = find_id_for_label(content, "a plain fact");
+        let opts = EditOptions {
+            target_id,
+            label: None,
+            command: Some("echo check".to_string()),
+            new_id: None,
+            tags: None,
+        };
+        run_in(&opts, dir.path()).unwrap();
+
+        let result = fs::read_to_string(&facts_path).unwrap();
+        assert!(result.contains("label: a plain fact"));
+        assert!(result.contains("command: echo check"));
+        // Should now be a mapping, not a plain string
+        assert!(!result.starts_with("- a plain fact\n"));
+    }
+
+    #[test]
+    fn test_edit_plain_to_mapping_with_id() {
+        let content = "- a plain fact\n";
+        let (dir, facts_path) = setup_test_dir(content);
+
+        let target_id = find_id_for_label(content, "a plain fact");
+        let opts = EditOptions {
+            target_id,
+            label: None,
+            command: None,
+            new_id: Some("myid".to_string()),
+            tags: None,
+        };
+        run_in(&opts, dir.path()).unwrap();
+
+        let result = fs::read_to_string(&facts_path).unwrap();
+        assert!(result.contains("label: a plain fact"));
+        assert!(result.contains("id: myid"));
+    }
+
+    #[test]
+    fn test_edit_preserves_explicit_id() {
+        let content = "- label: has id\n  id: keep-me\n  command: echo old\n";
+        let (dir, facts_path) = setup_test_dir(content);
+
+        let target_id = "keep-me".to_string();
+        let opts = EditOptions {
+            target_id,
+            label: Some("changed label".to_string()),
+            command: None,
+            new_id: None,
+            tags: None,
+        };
+        run_in(&opts, dir.path()).unwrap();
+
+        let result = fs::read_to_string(&facts_path).unwrap();
+        assert!(result.contains("label: changed label"));
+        assert!(result.contains("id: keep-me"));
+        assert!(result.contains("command: echo old"));
+    }
+
+    #[test]
+    fn test_edit_unknown_id_errors() {
+        let content = "- some fact\n";
+        let (dir, _) = setup_test_dir(content);
+
+        let opts = EditOptions {
+            target_id: "zzz".to_string(),
+            label: Some("new".to_string()),
+            command: None,
+            new_id: None,
+            tags: None,
+        };
+        let result = run_in(&opts, dir.path());
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("zzz"), "error should mention the ID: {err}");
+    }
+
+    #[test]
+    fn test_edit_tags_migrate_inline_to_mapping() {
+        // Plain fact with inline tags. When we add a command, it becomes a mapping
+        // and tags should move to the tags key.
+        let content = "- a tagged fact @mvp @core\n";
+        let (dir, facts_path) = setup_test_dir(content);
+
+        let target_id = find_id_for_label(content, "a tagged fact");
+        let opts = EditOptions {
+            target_id,
+            label: None,
+            command: Some("echo check".to_string()),
+            new_id: None,
+            tags: None,
+        };
+        run_in(&opts, dir.path()).unwrap();
+
+        let result = fs::read_to_string(&facts_path).unwrap();
+        // Should be a mapping now with tags key (not inline)
+        assert!(result.contains("label: a tagged fact"));
+        assert!(result.contains("command: echo check"));
+        assert!(result.contains("tags: [mvp, core]"));
+        // Tags should NOT be inline anymore
+        assert!(!result.contains("@mvp"));
+        assert!(!result.contains("@core"));
+    }
+
+    #[test]
+    fn test_edit_in_section() {
+        let content = "# section\n\n- fact in section\n";
+        let (dir, facts_path) = setup_test_dir(content);
+
+        let target_id = find_id_for_label(content, "fact in section");
+        let opts = EditOptions {
+            target_id,
+            label: Some("edited fact".to_string()),
+            command: None,
+            new_id: None,
+            tags: None,
+        };
+        run_in(&opts, dir.path()).unwrap();
+
+        let result = fs::read_to_string(&facts_path).unwrap();
+        assert!(result.contains("# section"));
+        assert!(result.contains("edited fact"));
+        assert!(!result.contains("fact in section"));
+    }
+}

@@ -1,11 +1,13 @@
 mod add;
 mod check;
 mod color;
+mod edit;
 mod id;
 mod list;
 mod model;
 mod parser;
 mod project;
+mod remove;
 mod tags;
 mod writer;
 
@@ -80,6 +82,34 @@ enum Command {
         #[arg(long)]
         tags: Option<String>,
     },
+
+    /// Remove a fact by ID, outputs what was removed.
+    Remove {
+        /// The ID of the fact to remove.
+        id: String,
+    },
+
+    /// Modify a fact by ID.
+    Edit {
+        /// The ID of the fact to edit.
+        id: String,
+
+        /// New label text.
+        #[arg(long)]
+        label: Option<String>,
+
+        /// New validation command.
+        #[arg(long)]
+        command: Option<String>,
+
+        /// New explicit ID.
+        #[arg(long, name = "new-id")]
+        new_id: Option<String>,
+
+        /// New tags (comma-separated, e.g. "mvp,core").
+        #[arg(long)]
+        tags: Option<String>,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -132,6 +162,26 @@ fn main() -> anyhow::Result<()> {
                 tags,
             };
             add::run(&opts)?;
+        }
+        Some(Command::Remove { id }) => {
+            remove::run(&id)?;
+        }
+        Some(Command::Edit {
+            id,
+            label,
+            command,
+            new_id,
+            tags,
+        }) => {
+            let tags = tags.map(|t| add::parse_tags(&t));
+            let opts = edit::EditOptions {
+                target_id: id,
+                label,
+                command,
+                new_id,
+                tags,
+            };
+            edit::run(&opts)?;
         }
         None => {
             let opts = list::ListOptions {
