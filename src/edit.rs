@@ -37,6 +37,12 @@ pub fn run(opts: &EditOptions) -> Result<()> {
 
 /// Run the edit subcommand in a given root directory.
 pub fn run_in(opts: &EditOptions, root: &Path) -> Result<()> {
+    if let Some(ref label) = opts.label {
+        if label.contains('\n') || label.contains('\r') {
+            anyhow::bail!("label cannot contain newlines");
+        }
+    }
+
     let files = project::discover_fact_files(root)?;
 
     if files.is_empty() {

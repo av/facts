@@ -34,6 +34,10 @@ pub fn run(opts: &AddOptions) -> Result<()> {
 /// Run the add subcommand in a given root directory.
 /// Separated from `run` so tests can supply a temp dir without changing cwd.
 fn run_in(opts: &AddOptions, root: &Path) -> Result<()> {
+    if opts.label.contains('\n') || opts.label.contains('\r') {
+        anyhow::bail!("label cannot contain newlines");
+    }
+
     let filename = opts.file.as_deref().unwrap_or(".facts");
 
     // Ensure filename ends with .facts

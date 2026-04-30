@@ -1834,3 +1834,42 @@ fn version_flag_prints_version() {
         .success()
         .stdout(predicate::str::contains(env!("CARGO_PKG_VERSION")));
 }
+
+// ===========================================================================
+// input validation — newlines in labels
+// ===========================================================================
+
+#[test]
+fn add_rejects_label_with_newline() {
+    let dir = empty_project();
+    facts_cmd(&dir)
+        .args(["add", "line\nbreak"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("label cannot contain newlines"));
+}
+
+#[test]
+fn edit_rejects_label_with_newline() {
+    let dir = project("- original fact\n");
+    // Get the ID of the fact
+    let list_output = facts_cmd(&dir)
+        .arg("list")
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&list_output.stdout);
+    let id = stdout
+        .lines()
+        .find(|l| l.contains("original fact"))
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap()
+        .to_string();
+
+    facts_cmd(&dir)
+        .args(["edit", &id, "--label", "line\nbreak"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("label cannot contain newlines"));
+}
