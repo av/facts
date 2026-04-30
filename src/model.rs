@@ -13,7 +13,6 @@ pub struct FactSheet {
 
 /// A section defined by a heading.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct Section {
     /// The heading text (without # prefix).
     pub title: String,
@@ -31,7 +30,6 @@ pub struct Section {
 
 /// A single fact.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct Fact {
     /// Explicit ID (from `id` key in mapping), if any.
     pub explicit_id: Option<String>,

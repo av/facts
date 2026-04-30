@@ -5,7 +5,8 @@ use std::path::Path;
 use anyhow::{Context, Result};
 
 use crate::id;
-use crate::model::{Fact, FactSheet, Section};
+use crate::locate::{self, FactLocation};
+use crate::model::{Fact, FactSheet};
 use crate::parser;
 use crate::project;
 use crate::writer;
@@ -61,7 +62,7 @@ pub fn run_in(opts: &EditOptions, root: &Path) -> Result<()> {
             all_fact_labels.push((fact.label.clone(), fact.explicit_id.clone()));
             fact_locations.push((sheet_idx, FactLocation::Preamble(fact_idx)));
         }
-        collect_section_locations(
+        locate::collect_section_locations(
             sheet_idx,
             &sheet.sections,
             &[],
@@ -82,11 +83,11 @@ pub fn run_in(opts: &EditOptions, root: &Path) -> Result<()> {
     let (ref file_path, ref mut sheet) = sheets[sheet_idx];
 
     // Get the fact and apply edits
-    let fact = get_fact_mut(sheet, location);
+    let fact = locate::get_fact_mut(sheet, location);
     apply_edits(fact, opts);
 
     // Regenerate raw representation
-    let fact = get_fact_mut(sheet, location);
+    let fact = locate::get_fact_mut(sheet, location);
     fact.raw = writer::fact_to_raw(fact);
 
     // Write back
@@ -131,58 +132,6 @@ fn apply_edits(fact: &mut Fact, opts: &EditOptions) {
             // (this is handled by fact_to_raw which uses tags key for mappings)
         }
     }
-}
-
-/// Location of a fact within a FactSheet.
-#[derive(Debug, Clone)]
-enum FactLocation {
-    Preamble(usize),
-    Section(Vec<usize>, usize),
-}
-
-/// Recursively collect fact locations from sections.
-fn collect_section_locations(
-    sheet_idx: usize,
-    sections: &[Section],
-    parent_indices: &[usize],
-    all_labels: &mut Vec<(String, Option<String>)>,
-    locations: &mut Vec<(usize, FactLocation)>,
-) {
-    for (sec_idx, section) in sections.iter().enumerate() {
-        let mut path = parent_indices.to_vec();
-        path.push(sec_idx);
-        for (fact_idx, fact) in section.facts.iter().enumerate() {
-            all_labels.push((fact.label.clone(), fact.explicit_id.clone()));
-            locations.push((sheet_idx, FactLocation::Section(path.clone(), fact_idx)));
-        }
-        collect_section_locations(
-            sheet_idx,
-            &section.children,
-            &path,
-            all_labels,
-            locations,
-        );
-    }
-}
-
-/// Get a mutable reference to a fact at a given location.
-fn get_fact_mut<'a>(sheet: &'a mut FactSheet, location: &FactLocation) -> &'a mut Fact {
-    match location {
-        FactLocation::Preamble(idx) => &mut sheet.preamble[*idx],
-        FactLocation::Section(path, fact_idx) => {
-            let section = navigate_to_section_mut(&mut sheet.sections, path);
-            &mut section.facts[*fact_idx]
-        }
-    }
-}
-
-/// Navigate to a mutable section by index path.
-fn navigate_to_section_mut<'a>(sections: &'a mut [Section], path: &[usize]) -> &'a mut Section {
-    let mut current = &mut sections[path[0]];
-    for &idx in &path[1..] {
-        current = &mut current.children[idx];
-    }
-    current
 }
 
 #[cfg(test)]
@@ -293,7 +242,6 @@ mod tests {
         let result = fs::read_to_string(&facts_path).unwrap();
         assert!(result.contains("label: a plain fact"));
         assert!(result.contains("command: echo check"));
-        // Should now be a mapping, not a plain string
         assert!(!result.starts_with("- a plain fact\n"));
     }
 
@@ -358,8 +306,6 @@ mod tests {
 
     #[test]
     fn test_edit_tags_migrate_inline_to_mapping() {
-        // Plain fact with inline tags. When we add a command, it becomes a mapping
-        // and tags should move to the tags key.
         let content = "- a tagged fact @mvp @core\n";
         let (dir, facts_path) = setup_test_dir(content);
 
@@ -374,11 +320,9 @@ mod tests {
         run_in(&opts, dir.path()).unwrap();
 
         let result = fs::read_to_string(&facts_path).unwrap();
-        // Should be a mapping now with tags key (not inline)
         assert!(result.contains("label: a tagged fact"));
         assert!(result.contains("command: echo check"));
         assert!(result.contains("tags: [mvp, core]"));
-        // Tags should NOT be inline anymore
         assert!(!result.contains("@mvp"));
         assert!(!result.contains("@core"));
     }

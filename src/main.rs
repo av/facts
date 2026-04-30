@@ -6,6 +6,7 @@ mod id;
 mod init;
 mod lint;
 mod list;
+mod locate;
 mod model;
 mod parser;
 mod project;

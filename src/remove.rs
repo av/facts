@@ -5,7 +5,8 @@ use std::path::Path;
 use anyhow::{Context, Result};
 
 use crate::id;
-use crate::model::{FactSheet, Section};
+use crate::locate::{self, FactLocation};
+use crate::model::FactSheet;
 use crate::parser;
 use crate::project;
 use crate::writer;
@@ -40,17 +41,20 @@ pub fn run_in(target_id: &str, root: &Path) -> Result<()> {
 
     // Collect all fact labels for ID assignment
     let mut all_fact_labels: Vec<(String, Option<String>)> = Vec::new();
-    // Track (sheet_index, location) for each fact
     let mut fact_locations: Vec<(usize, FactLocation)> = Vec::new();
 
     for (sheet_idx, (_, sheet)) in sheets.iter().enumerate() {
-        // Preamble facts
         for (fact_idx, fact) in sheet.preamble.iter().enumerate() {
             all_fact_labels.push((fact.label.clone(), fact.explicit_id.clone()));
             fact_locations.push((sheet_idx, FactLocation::Preamble(fact_idx)));
         }
-        // Section facts (recursive)
-        collect_section_locations(sheet_idx, &sheet.sections, &[], &mut all_fact_labels, &mut fact_locations);
+        locate::collect_section_locations(
+            sheet_idx,
+            &sheet.sections,
+            &[],
+            &mut all_fact_labels,
+            &mut fact_locations,
+        );
     }
 
     let assigned_ids = id::assign_ids(&all_fact_labels);
@@ -65,10 +69,10 @@ pub fn run_in(target_id: &str, root: &Path) -> Result<()> {
     let (ref file_path, ref mut sheet) = sheets[sheet_idx];
 
     // Get the fact for output before removing it
-    let removed_fact = get_fact(sheet, location).clone();
+    let removed_label = locate::get_fact(sheet, location).label.clone();
 
     // Print the removed fact
-    println!("{}", removed_fact.label);
+    println!("{removed_label}");
 
     // Remove the fact
     remove_fact(sheet, location);
@@ -76,8 +80,6 @@ pub fn run_in(target_id: &str, root: &Path) -> Result<()> {
     // Write back
     let output = writer::write(sheet);
     if output.trim().is_empty() {
-        // File is completely empty — remove it? No, write the empty content.
-        // Actually, if the file only had that one fact, just write empty or minimal.
         std::fs::write(file_path, "")?;
     } else {
         std::fs::write(file_path, &output)
@@ -85,62 +87,6 @@ pub fn run_in(target_id: &str, root: &Path) -> Result<()> {
     }
 
     Ok(())
-}
-
-/// Location of a fact within a FactSheet.
-#[derive(Debug, Clone)]
-enum FactLocation {
-    Preamble(usize),
-    /// Section path as indices at each level, plus fact index within that section.
-    Section(Vec<usize>, usize),
-}
-
-/// Recursively collect fact locations from sections.
-fn collect_section_locations(
-    sheet_idx: usize,
-    sections: &[Section],
-    parent_indices: &[usize],
-    all_labels: &mut Vec<(String, Option<String>)>,
-    locations: &mut Vec<(usize, FactLocation)>,
-) {
-    for (sec_idx, section) in sections.iter().enumerate() {
-        let mut path = parent_indices.to_vec();
-        path.push(sec_idx);
-        for (fact_idx, fact) in section.facts.iter().enumerate() {
-            all_labels.push((fact.label.clone(), fact.explicit_id.clone()));
-            locations.push((sheet_idx, FactLocation::Section(path.clone(), fact_idx)));
-        }
-        collect_section_locations(sheet_idx, &section.children, &path, all_labels, locations);
-    }
-}
-
-/// Get a reference to a fact at a given location.
-fn get_fact<'a>(sheet: &'a FactSheet, location: &FactLocation) -> &'a crate::model::Fact {
-    match location {
-        FactLocation::Preamble(idx) => &sheet.preamble[*idx],
-        FactLocation::Section(path, fact_idx) => {
-            let section = navigate_to_section(&sheet.sections, path);
-            &section.facts[*fact_idx]
-        }
-    }
-}
-
-/// Navigate to a section by index path.
-fn navigate_to_section<'a>(sections: &'a [Section], path: &[usize]) -> &'a Section {
-    let mut current = &sections[path[0]];
-    for &idx in &path[1..] {
-        current = &current.children[idx];
-    }
-    current
-}
-
-/// Navigate to a mutable section by index path.
-fn navigate_to_section_mut<'a>(sections: &'a mut [Section], path: &[usize]) -> &'a mut Section {
-    let mut current = &mut sections[path[0]];
-    for &idx in &path[1..] {
-        current = &mut current.children[idx];
-    }
-    current
 }
 
 /// Remove a fact at the given location. Also removes empty sections.
@@ -151,7 +97,7 @@ fn remove_fact(sheet: &mut FactSheet, location: &FactLocation) {
         }
         FactLocation::Section(path, fact_idx) => {
             {
-                let section = navigate_to_section_mut(&mut sheet.sections, path);
+                let section = locate::navigate_to_section_mut(&mut sheet.sections, path);
                 section.facts.remove(*fact_idx);
             }
             // Clean up empty sections (from leaf to root)
@@ -165,14 +111,14 @@ fn cleanup_empty_sections(sections: &mut Vec<Section>, path: &[usize]) {
     // Check from the deepest level upward
     for depth in (0..path.len()).rev() {
         let current_path = &path[..=depth];
-        let section = navigate_to_section(sections, current_path);
+        let section = locate::navigate_to_section(sections, current_path);
         if section.facts.is_empty() && section.children.is_empty() {
             // Remove this section from its parent
             if depth == 0 {
                 sections.remove(current_path[0]);
             } else {
                 let parent_path = &current_path[..current_path.len() - 1];
-                let parent = navigate_to_section_mut(sections, parent_path);
+                let parent = locate::navigate_to_section_mut(sections, parent_path);
                 parent.children.remove(current_path[depth]);
             }
         } else {
@@ -181,6 +127,8 @@ fn cleanup_empty_sections(sections: &mut Vec<Section>, path: &[usize]) {
         }
     }
 }
+
+use crate::model::Section;
 
 #[cfg(test)]
 mod tests {
@@ -234,9 +182,6 @@ mod tests {
         let (dir, _) = setup_test_dir(content);
 
         let target_id = find_id_for_label(content, "fact to remove");
-
-        // Capture output by running in a test context
-        // We can't easily capture println in tests, but we can verify the fact was removed
         run_in(&target_id, dir.path()).unwrap();
     }
 
@@ -249,7 +194,6 @@ mod tests {
         run_in(&target_id, dir.path()).unwrap();
 
         let result = fs::read_to_string(&facts_path).unwrap();
-        // Section heading should be gone since it was the last fact
         assert!(!result.contains("mysection"));
         assert!(!result.contains("only fact"));
     }
@@ -290,7 +234,6 @@ mod tests {
         run_in(&target_id, dir.path()).unwrap();
 
         let result = fs::read_to_string(&facts_path).unwrap();
-        // Both parent and child should be removed since child was the only content
         assert!(!result.contains("parent"));
         assert!(!result.contains("child"));
     }
@@ -304,7 +247,6 @@ mod tests {
         run_in(&target_id, dir.path()).unwrap();
 
         let result = fs::read_to_string(&facts_path).unwrap();
-        // Parent should remain since it has its own facts
         assert!(result.contains("parent"));
         assert!(result.contains("parent fact"));
         assert!(!result.contains("child"));

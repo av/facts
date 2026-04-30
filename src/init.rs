@@ -158,16 +158,21 @@ static DETECTORS: &[(&str, &str, &[(&str, Option<&str>)])] = &[
     ),
 ];
 
-/// Run the init subcommand.
+/// Run the init subcommand (auto-detects project root).
 pub fn run() -> Result<()> {
     let root = project::find_project_root()?;
+    run_in(&root)
+}
+
+/// Run the init subcommand in a given root directory.
+fn run_in(root: &Path) -> Result<()> {
     let facts_path = root.join(".facts");
 
     if facts_path.exists() {
         anyhow::bail!(".facts already exists in {}", root.display());
     }
 
-    let stacks = detect_stacks(&root);
+    let stacks = detect_stacks(root);
     let content = generate_facts_content(&stacks);
     std::fs::write(&facts_path, &content)?;
 
@@ -407,16 +412,10 @@ mod tests {
     #[test]
     fn test_init_refuses_overwrite() {
         let dir = tempfile::tempdir().unwrap();
-        // Create .git so project root detection works
         std::fs::create_dir(dir.path().join(".git")).unwrap();
-        // Create existing .facts
         std::fs::write(dir.path().join(".facts"), "- existing fact\n").unwrap();
 
-        // Run init from the temp dir
-        let saved_dir = std::env::current_dir().unwrap();
-        std::env::set_current_dir(dir.path()).unwrap();
-        let result = run();
-        std::env::set_current_dir(saved_dir).unwrap();
+        let result = run_in(dir.path());
 
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
@@ -436,10 +435,7 @@ mod tests {
         std::fs::create_dir(dir.path().join(".git")).unwrap();
         std::fs::write(dir.path().join("Cargo.toml"), "[package]\nname=\"t\"\n").unwrap();
 
-        let saved_dir = std::env::current_dir().unwrap();
-        std::env::set_current_dir(dir.path()).unwrap();
-        let result = run();
-        std::env::set_current_dir(saved_dir).unwrap();
+        let result = run_in(dir.path());
 
         assert!(result.is_ok(), "init failed: {}", result.unwrap_err());
         assert!(dir.path().join(".facts").exists());

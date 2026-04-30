@@ -164,8 +164,6 @@ fn parse_facts(lines: &[FactLine]) -> Result<Vec<Fact>> {
         } else if line.starts_with("  ") && !entries.is_empty() {
             // Continuation of previous mapping entry
             entries.last_mut().unwrap().0.push(line.clone());
-        } else if line.starts_with("- ") {
-            entries.push((vec![line.clone()], fl.blank_lines_before));
         } else {
             bail!("unexpected line (not a fact or continuation): {line}");
         }
