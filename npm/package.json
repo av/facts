@@ -1,0 +1,40 @@
+{
+  "name": "facts-cli",
+  "version": "0.1.0",
+  "description": "A CLI for fact-driven development with coding agents",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/av/facts.git"
+  },
+  "homepage": "https://github.com/av/facts",
+  "bin": {
+    "facts": "bin/facts"
+  },
+  "scripts": {
+    "postinstall": "node install.js"
+  },
+  "files": [
+    "install.js",
+    "bin/"
+  ],
+  "keywords": [
+    "facts",
+    "cli",
+    "coding-agents",
+    "fact-driven-development",
+    "spec"
+  ],
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ],
+  "engines": {
+    "node": ">=14"
+  }
+}

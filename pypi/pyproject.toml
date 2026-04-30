@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "facts-cli"
+version = "0.1.0"
+description = "A CLI for fact-driven development with coding agents"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.8"
+keywords = ["facts", "cli", "coding-agents", "fact-driven-development"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development :: Build Tools",
+]
+
+[project.urls]
+Homepage = "https://github.com/av/facts"
+Repository = "https://github.com/av/facts"
+Issues = "https://github.com/av/facts/issues"
+
+[project.scripts]
+facts = "facts_cli:main"

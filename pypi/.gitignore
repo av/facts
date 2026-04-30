@@ -1,0 +1,6 @@
+dist/
+build/
+*.egg-info/
+__pycache__/
+facts_cli/bin/facts
+facts_cli/bin/facts.exe
