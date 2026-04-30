@@ -6,6 +6,7 @@ use anyhow::{Context, Result};
 
 use crate::id;
 use crate::locate::{self, FactLocation};
+use crate::lock::FileLock;
 use crate::model::FactSheet;
 use crate::parser;
 use crate::project;
@@ -19,6 +20,9 @@ pub fn run(target_id: &str) -> Result<()> {
 
 /// Run the remove subcommand in a given root directory.
 pub fn run_in(target_id: &str, root: &Path) -> Result<()> {
+    // Acquire advisory lock to prevent concurrent modifications.
+    let _lock = FileLock::acquire(root)?;
+
     let files = project::discover_fact_files(root)?;
 
     if files.is_empty() {

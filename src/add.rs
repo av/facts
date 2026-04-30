@@ -4,6 +4,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 
+use crate::lock::FileLock;
 use crate::model::{Fact, FactSheet, Section};
 use crate::parser;
 use crate::project;
@@ -79,6 +80,9 @@ fn run_in(opts: &AddOptions, root: &Path) -> Result<()> {
     if !check_path.starts_with(&canonical_root) {
         anyhow::bail!("file path must be within the project root");
     }
+
+    // Acquire advisory lock to prevent concurrent modifications.
+    let _lock = FileLock::acquire(root)?;
 
     // Parse existing file or create empty sheet
     let mut sheet = if file_path.exists() {

@@ -6,6 +6,7 @@ use anyhow::{Context, Result};
 
 use crate::id;
 use crate::locate::{self, FactLocation};
+use crate::lock::FileLock;
 use crate::model::{Fact, FactSheet};
 use crate::parser;
 use crate::project;
@@ -53,6 +54,9 @@ pub fn run_in(opts: &EditOptions, root: &Path) -> Result<()> {
             anyhow::bail!("command cannot be empty");
         }
     }
+
+    // Acquire advisory lock to prevent concurrent modifications.
+    let _lock = FileLock::acquire(root)?;
 
     let files = project::discover_fact_files(root)?;
 
