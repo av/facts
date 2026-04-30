@@ -297,12 +297,12 @@ pub fn run(opts: &CheckOptions) -> Result<bool> {
                 );
                 let pad = " ".repeat(detail_indent);
                 println!(
-                    "{pad}{} exit {exit_code}",
-                    color::dim("command:"),
+                    "{pad}{} {exit_code}",
+                    color::dim("exit:"),
                 );
                 println!(
                     "{pad}{} {command}",
-                    color::dim("ran:"),
+                    color::dim("command:"),
                 );
                 if !stderr.is_empty() {
                     for line in stderr.lines() {
