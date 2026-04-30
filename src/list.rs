@@ -1,6 +1,7 @@
 /// The `list` subcommand — show facts in file order.
 use anyhow::{Context, Result};
 
+use crate::color;
 use crate::id;
 use crate::model::FactSheet;
 use crate::parser;
@@ -107,7 +108,7 @@ pub fn run(opts: &ListOptions) -> Result<()> {
     Ok(())
 }
 
-/// Format a single fact line for display.
+/// Format a single fact line for display with color.
 fn format_fact_line(
     sheet: &FactSheet,
     section_path: &[String],
@@ -123,10 +124,17 @@ fn format_fact_line(
         parts
     };
 
+    let dim_id = color::dim(id);
+    let dim_sep = color::dim(">");
+
     if path_parts.is_empty() {
-        format!("{id}  {label}")
+        format!("{dim_id}  {label}")
     } else {
-        let path_str = path_parts.join(" > ");
-        format!("{id}  {path_str} > {label}")
+        let colored_path = path_parts
+            .iter()
+            .map(|p| color::bold(p))
+            .collect::<Vec<_>>()
+            .join(&format!(" {dim_sep} "));
+        format!("{dim_id}  {colored_path} {dim_sep} {label}")
     }
 }
