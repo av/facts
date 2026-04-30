@@ -45,9 +45,16 @@ pub fn assign_ids(facts: &[(String, Option<String>)]) -> Vec<String> {
                 continue;
             }
 
+            // Check if all colliding facts have identical hashes.
+            // If so, extending the ID length will never resolve the collision —
+            // skip directly to counter suffix disambiguation.
+            let all_same_hash = extendable
+                .iter()
+                .all(|&i| hashes[i] == hashes[extendable[0]]);
+
             let current_len = ids[extendable[0]].len();
-            if current_len >= MAX_LEN {
-                // Last resort: append a counter suffix to disambiguate
+            if current_len >= MAX_LEN || all_same_hash {
+                // Append a counter suffix to disambiguate
                 for (counter, &i) in extendable.iter().enumerate().skip(1) {
                     let old = ids[i].clone();
                     ids[i] = format!("{old}{counter}");
