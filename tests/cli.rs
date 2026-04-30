@@ -1917,3 +1917,40 @@ fn add_rejects_section_with_double_slash() {
         .failure()
         .stderr(predicate::str::contains("section path cannot contain empty components"));
 }
+
+// ===========================================================================
+// input validation — --file path traversal
+// ===========================================================================
+
+#[test]
+fn add_rejects_absolute_file_path() {
+    let dir = empty_project();
+    facts_cmd(&dir)
+        .args(["add", "test", "--file", "/tmp/outside.facts"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("file path must be relative, not absolute"));
+}
+
+#[test]
+fn add_rejects_dotdot_file_path() {
+    let dir = empty_project();
+    facts_cmd(&dir)
+        .args(["add", "test", "--file", "../escape.facts"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("file path must be within the project root"));
+}
+
+#[test]
+fn add_accepts_valid_relative_file_path() {
+    let dir = empty_project();
+    facts_cmd(&dir)
+        .args(["add", "test", "--file", "valid.facts"])
+        .assert()
+        .success();
+
+    let content = fs::read_to_string(dir.path().join("valid.facts")).unwrap();
+    assert!(content.contains("test"));
+}
+

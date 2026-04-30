@@ -40,6 +40,11 @@ fn run_in(opts: &AddOptions, root: &Path) -> Result<()> {
 
     let filename = opts.file.as_deref().unwrap_or(".facts");
 
+    // Reject absolute paths — there's no valid reason to use one.
+    if filename.starts_with('/') {
+        anyhow::bail!("file path must be relative, not absolute");
+    }
+
     // Ensure filename ends with .facts
     let filename = if filename.ends_with(".facts") {
         filename.to_string()
@@ -48,6 +53,19 @@ fn run_in(opts: &AddOptions, root: &Path) -> Result<()> {
     };
 
     let file_path = root.join(&filename);
+
+    // Ensure the resolved path is within the project root.
+    let canonical_root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    let check_path = if file_path.exists() {
+        file_path.canonicalize()?
+    } else {
+        let parent = file_path.parent().unwrap_or(root);
+        let canon_parent = parent.canonicalize().unwrap_or_else(|_| parent.to_path_buf());
+        canon_parent.join(file_path.file_name().unwrap())
+    };
+    if !check_path.starts_with(&canonical_root) {
+        anyhow::bail!("file path must be within the project root");
+    }
 
     // Parse existing file or create empty sheet
     let mut sheet = if file_path.exists() {
