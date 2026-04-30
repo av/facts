@@ -1,24 +1,69 @@
 # facts
 
-- the project is a CLI for fact-driven development with coding agents
-- facts works with a fact sheet, which is a flat list of validatable atomic facts
+- a CLI for fact-driven development with coding agents
+- works with fact sheets — flat lists of validatable atomic facts
+- extreme simplicity in everything — code, format, UX
 
 ## format
 
 ### file
-- the fact sheet is named .facts and lives in the project root
-- the format is a valid subset of both YAML and Markdown
+- project root is the directory containing the nearest parent .git
+- fact sheets are *.facts files in the project root
+- .facts is the default/main fact sheet
+- naming is semantic (e.g. cli.facts for CLI-specific facts)
+- every line is a heading, a fact, or blank — no other content
 
-### syntax
-- lines starting with # are section headings
-- sections are semantically meaningful and group related facts
+### parsing
+- headings (# prefixed lines) are extracted first as structure
+- each section body is then parsed as YAML
+- the format is valid Markdown and valid YAML per-section
+
+### sections
 - heading depth maps to hierarchy
+- sections are addressable by path (e.g. distribution/npm)
+- the CLI treats sections as first-class citizens
+- sections are created implicitly when a fact is added to them
+- sections are removed when their last fact is deleted
+
+### facts
 - each fact is a YAML sequence item (- prefixed)
-- a fact can be a plain string or a mapping with label and command keys
+- a fact can be a plain string or a mapping
+- mapping keys: id (optional), label (required), command (optional), tags (optional)
+- no other keys are allowed
+- plain string facts are equivalent to a mapping with only a label
+- each fact is fully atomic and independent
+
+### tags
+- tags are freeform @word tokens for filtering and categorisation
+- inline syntax: - some fact @mvp @core
+- mapping syntax: tags: [mvp, core]
+- both can coexist on a single fact — parsed as the union
+- tags are stripped from the label before ID hashing and display
+- write normalises tags to one location: inline for plain strings, tags key for mappings
+- lint flags mixed inline and mapping tags on the same fact
+- @implemented is a special tag used by the facts-implement skill
+- @implemented is informational — check still runs commands for tagged facts
+
+### identity
+- every fact has a short ID derived from a hash of its label (tags stripped)
+- IDs are 3 characters by default, extended only on collision
+- IDs are computed, not stored in the file
+- an explicit id key in a mapping overrides the generated ID
+- IDs are stable as long as the label does not change
 
 ### validation
-- a fact with a command key is validated by running the command as a shell command
-- exit 0 means the fact holds, non-0 means it fails
+- facts with a command are validated programmatically by the CLI
+- facts without a command are validated by the agent against the codebase
+- commands run via $SHELL, falling back to sh if unset
+- working directory is the project root
+- exit 0 means the fact holds, non-zero means it fails
+- all commands run on every check — no caching
+- commands run sequentially
+- no timeout by default, configurable per-command via --timeout flag
+- fact authors should write fast, idempotent check commands
+- manual facts do not affect the exit code
+- label: project is a Cargo project
+  command: test -f Cargo.toml
 
 ## cli
 
@@ -26,19 +71,128 @@
 - written in Rust
 - distributed as a single compact binary
 
+### subcommands
+- bare facts (no subcommand) defaults to list
+- init — scaffold a .facts file, detects well-known framework/runtime combos
+- check — run all command-facts, report pass/fail/manual
+- list — show facts in file order, purely structural
+- add — append a fact to a file and section
+- remove — remove a fact by ID, outputs what was removed
+- edit — modify a fact by ID, preserves explicit id
+- lint — validate that fact sheets are parseable
+
+### init
+- creates a .facts file in the project root
+- detects well-known framework/runtime combos (e.g. Cargo.toml, package.json)
+- scaffolds initial facts based on detected stack
+
+### check
+- groups output by status: passed, failed, manual
+- each fact line shows ID and full path (file > section > label)
+- file prefix omitted for .facts (default), shown for other files
+- passed facts show the command inline
+- failed facts show command, exit code, and stderr
+- manual facts are listed without detail
+- summary line: N passed, N failed, N manual
+- legend at the bottom explains manual marker
+- exit 0 if all command-facts pass, non-zero if any fail
+- --tags flag accepts a boolean filter expression: "mvp and not blocked"
+- --timeout flag sets a per-command timeout
+- filter expressions support and, or, not, and parentheses
+
+### list
+- same format as check but without status markers
+- shows facts in file order
+- each fact line shows ID and full path (file > section > label)
+- file prefix omitted for .facts (default), shown for other files
+- supports filtering: --file, --section, --has-command, --manual
+- --tags flag accepts a boolean filter expression
+- default target is all *.facts files
+
+### add
+- defaults to .facts at the top level
+- --section flag targets a specific section (created if needed)
+- --file flag targets a specific *.facts file (created if needed)
+- --command flag adds a validation command
+- --id flag sets an explicit ID
+- --tags flag adds tags
+- appends to the end of the target section
+- file order is canonical
+
+### remove
+- takes an ID as argument
+- outputs the removed fact
+- silent — no confirmation prompt
+
+### edit
+- takes an ID as argument
+- --label, --command, --id, --tags flags modify respective fields
+- preserves explicit id when changing other fields
+- when a plain string fact gains a command or id, it becomes a mapping
+- tags migrate from inline to tags key when fact becomes a mapping
+
+### lint
+- validates that fact sheets are parseable
+- reports clear error messages for structural issues
+- flags mixed inline and mapping tags on the same fact
+- does not run any validation commands
+
+### errors
+- every error state has a clear, descriptive error message
+- invalid operations exit non-zero
+
+### output
+- polished terminal output with color and alignment
+- green for pass, red for fail, yellow for manual
+- colors disabled when output is not a TTY
+- write back is byte-for-byte deterministic
+- parse then write with no changes produces identical output
+
+## architecture
+
+- minimal dependencies
+- clap for CLI argument parsing
+- anyhow for error handling
+- integration tests for all user-facing features
+
+## platforms
+
+- linux amd64 and arm64
+- macOS amd64 and arm64
+- windows amd64
+
 ## distribution
 
 ### npm
-- published as an NPM package
+- published as an npm package wrapping the prebuilt binary
 
 ### pypi
-- published as a PyPI package
+- published as a PyPI package wrapping the prebuilt binary
 
 ### install.sh
-- install.sh downloads the binary from GitHub releases
+- downloads the binary from GitHub releases
 
-## skill
+## skills
 
-- teaches coding agents how to install and use facts
-- installable via skills.sh
+- all skills are agent-agnostic
+- all installable via skills.sh
+- skill names use facts- prefix to avoid collision
+- source is in ./skills/
+
+### facts
+- teaches agents how to install and use facts
 - source is in ./skills/facts/
+
+### facts-discover
+- instructs agent to scan the codebase and maintain the fact sheet
+- fully autonomous — adds, edits, and removes facts to match reality
+- resolves inconsistencies between fact sheet and codebase
+- removes obsolete facts, adds newly discovered ones
+- source is in ./skills/facts-discover/
+
+### facts-implement
+- instructs agent to read the fact sheet as a spec
+- agent infers dependency order and works through facts sequentially
+- implements what each fact describes in code
+- marks completed facts with @implemented tag
+- source is in ./skills/facts-implement/

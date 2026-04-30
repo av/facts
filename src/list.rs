@@ -1,0 +1,132 @@
+/// The `list` subcommand — show facts in file order.
+use anyhow::{Context, Result};
+
+use crate::id;
+use crate::model::FactSheet;
+use crate::parser;
+use crate::project;
+use crate::tags::matches_tag_expr;
+
+/// Options for the list command.
+pub struct ListOptions {
+    pub file_filter: Option<String>,
+    pub section_filter: Option<String>,
+    pub has_command: bool,
+    pub manual: bool,
+    pub tags_expr: Option<String>,
+}
+
+/// Run the list subcommand.
+pub fn run(opts: &ListOptions) -> Result<()> {
+    let root = project::find_project_root()?;
+    let files = project::discover_fact_files(&root)?;
+
+    if files.is_empty() {
+        eprintln!("no .facts files found in {}", root.display());
+        return Ok(());
+    }
+
+    let mut sheets = Vec::new();
+    for path in &files {
+        let content = std::fs::read_to_string(path)
+            .with_context(|| format!("failed to read {}", path.display()))?;
+        let filename = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(".facts");
+        let sheet = parser::parse(&content, filename)
+            .with_context(|| format!("failed to parse {}", path.display()))?;
+        sheets.push(sheet);
+    }
+
+    // Apply file filter
+    let sheets: Vec<&FactSheet> = sheets
+        .iter()
+        .filter(|s| {
+            if let Some(ref f) = opts.file_filter {
+                s.filename == *f || s.filename == format!("{f}.facts")
+            } else {
+                true
+            }
+        })
+        .collect();
+
+    // Collect all facts across all sheets for ID assignment
+    let mut all_fact_labels: Vec<(String, Option<String>)> = Vec::new();
+    let mut fact_indices: Vec<(usize, Vec<String>)> = Vec::new(); // (sheet_idx_in_filtered, section_path)
+
+    for (sheet_idx, sheet) in sheets.iter().enumerate() {
+        for (path, fact) in sheet.all_facts() {
+            all_fact_labels.push((fact.label.clone(), fact.explicit_id.clone()));
+            fact_indices.push((sheet_idx, path));
+        }
+    }
+
+    let assigned_ids = id::assign_ids(&all_fact_labels);
+
+    // Display facts
+    let mut fact_idx = 0;
+    for (sheet_idx, sheet) in sheets.iter().enumerate() {
+        for (path, fact) in sheet.all_facts() {
+            // Skip facts that don't belong to this sheet
+            while fact_idx < fact_indices.len() && fact_indices[fact_idx].0 != sheet_idx {
+                fact_idx += 1;
+            }
+
+            let id = &assigned_ids[fact_idx];
+            fact_idx += 1;
+
+            // Apply filters
+            if let Some(ref section) = opts.section_filter {
+                let path_str = path.join("/");
+                if !path_str.contains(section.as_str()) {
+                    continue;
+                }
+            }
+
+            if opts.has_command && fact.command.is_none() {
+                continue;
+            }
+
+            if opts.manual && fact.command.is_some() {
+                continue;
+            }
+
+            if let Some(ref expr) = opts.tags_expr {
+                if !matches_tag_expr(expr, &fact.tags) {
+                    continue;
+                }
+            }
+
+            // Format output line
+            let display = format_fact_line(sheet, &path, id, &fact.label);
+            println!("{display}");
+        }
+    }
+
+    Ok(())
+}
+
+/// Format a single fact line for display.
+fn format_fact_line(
+    sheet: &FactSheet,
+    section_path: &[String],
+    id: &str,
+    label: &str,
+) -> String {
+    let file_prefix = sheet.display_name();
+    let path_parts: Vec<&str> = if file_prefix.is_empty() {
+        section_path.iter().map(|s| s.as_str()).collect()
+    } else {
+        let mut parts = vec![file_prefix];
+        parts.extend(section_path.iter().map(|s| s.as_str()));
+        parts
+    };
+
+    if path_parts.is_empty() {
+        format!("{id}  {label}")
+    } else {
+        let path_str = path_parts.join(" > ");
+        format!("{id}  {path_str} > {label}")
+    }
+}
