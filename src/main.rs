@@ -1,3 +1,4 @@
+mod add;
 mod check;
 mod color;
 mod id;
@@ -6,6 +7,7 @@ mod model;
 mod parser;
 mod project;
 mod tags;
+mod writer;
 
 use clap::{Parser, Subcommand};
 
@@ -52,6 +54,32 @@ enum Command {
         #[arg(long)]
         timeout: Option<u64>,
     },
+
+    /// Append a fact to a file and section.
+    Add {
+        /// The fact label text.
+        label: String,
+
+        /// Target section path (e.g. "cli/add"). Created if needed.
+        #[arg(long)]
+        section: Option<String>,
+
+        /// Target .facts file (default: ".facts"). Created if needed.
+        #[arg(long)]
+        file: Option<String>,
+
+        /// Validation command.
+        #[arg(long)]
+        command: Option<String>,
+
+        /// Explicit ID override.
+        #[arg(long)]
+        id: Option<String>,
+
+        /// Comma-separated tags (e.g. "mvp,core").
+        #[arg(long)]
+        tags: Option<String>,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -83,6 +111,27 @@ fn main() -> anyhow::Result<()> {
             if !all_passed {
                 std::process::exit(1);
             }
+        }
+        Some(Command::Add {
+            label,
+            section,
+            file,
+            command,
+            id,
+            tags,
+        }) => {
+            let tags = tags
+                .map(|t| add::parse_tags(&t))
+                .unwrap_or_default();
+            let opts = add::AddOptions {
+                label,
+                file,
+                section,
+                command,
+                id,
+                tags,
+            };
+            add::run(&opts)?;
         }
         None => {
             let opts = list::ListOptions {
