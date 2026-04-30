@@ -2393,3 +2393,31 @@ fn edit_rejects_empty_new_id() {
         .stderr(predicate::str::contains("ID cannot be empty"));
 }
 
+// ===========================================================================
+// ISSUE-021: Sections deeper than 6 levels produce invalid Markdown headings
+// ===========================================================================
+
+#[test]
+fn add_accepts_section_depth_6() {
+    let dir = empty_project();
+    facts_cmd(&dir)
+        .args(["add", "deep fact", "--section", "a/b/c/d/e/f"])
+        .assert()
+        .success();
+
+    let content = fs::read_to_string(dir.path().join(".facts")).unwrap();
+    // Deepest heading should be ###### (6 levels)
+    assert!(content.contains("# a"), "missing depth-1 heading");
+    assert!(content.contains("###### f"), "missing depth-6 heading");
+    assert!(content.contains("- deep fact"), "missing the fact");
+}
+
+#[test]
+fn add_rejects_section_depth_7() {
+    let dir = empty_project();
+    facts_cmd(&dir)
+        .args(["add", "too deep", "--section", "a/b/c/d/e/f/g"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("section path too deep (max 6 levels)"));
+}

@@ -104,6 +104,17 @@ fn run_in(opts: &AddOptions, root: &Path) -> Result<()> {
         }
     };
 
+    // Reject duplicate explicit IDs.
+    if let Some(ref id) = opts.id {
+        let all_facts = sheet.all_facts();
+        let already_exists = all_facts
+            .iter()
+            .any(|(_, f)| f.explicit_id.as_deref() == Some(id));
+        if already_exists {
+            anyhow::bail!("ID already exists: {}", id);
+        }
+    }
+
     // Determine if this should be a plain string or mapping fact.
     // Tags alone do NOT promote to mapping — they go inline as @tag.
     // Only command or explicit id require a mapping.
@@ -146,6 +157,12 @@ fn add_to_section(sheet: &mut FactSheet, section_path: &str, fact: Fact) -> Resu
 
     if parts.is_empty() || parts.iter().any(|p| p.is_empty()) {
         anyhow::bail!("section path cannot contain empty components");
+    }
+
+    // Markdown only supports headings up to level 6 (######).
+    // Top-level sections start at depth 1, so at most 6 path components.
+    if parts.len() > 6 {
+        anyhow::bail!("section path too deep (max 6 levels)");
     }
 
     // Navigate/create section hierarchy

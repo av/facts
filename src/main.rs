@@ -135,7 +135,11 @@ enum Command {
     Init,
 
     /// Remove .facts file and agent skills installed by init.
-    Uninit,
+    Uninit {
+        /// Delete .facts even when it has content.
+        #[arg(long)]
+        force: bool,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -235,8 +239,8 @@ fn main() -> anyhow::Result<()> {
         Some(Command::Init) => {
             init::run()?;
         }
-        Some(Command::Uninit) => {
-            uninit::run()?;
+        Some(Command::Uninit { force }) => {
+            uninit::run(force)?;
         }
         None => {
             let opts = list::ListOptions {

@@ -111,6 +111,18 @@ pub fn run_in(opts: &EditOptions, root: &Path) -> Result<()> {
         .position(|id| *id == opts.target_id)
         .ok_or_else(|| anyhow::anyhow!("no fact found with ID '{}'", opts.target_id))?;
 
+    // Reject duplicate --new-id: check that the new ID doesn't already exist
+    // among OTHER facts (not the one being edited).
+    if let Some(ref new_id) = opts.new_id {
+        for (i, (_, explicit_id)) in all_fact_labels.iter().enumerate() {
+            if i != match_idx {
+                if explicit_id.as_deref() == Some(new_id.as_str()) {
+                    anyhow::bail!("ID already exists: {}", new_id);
+                }
+            }
+        }
+    }
+
     let (sheet_idx, ref location) = fact_locations[match_idx];
     let (ref file_path, ref mut sheet) = sheets[sheet_idx];
 

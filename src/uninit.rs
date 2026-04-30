@@ -4,21 +4,25 @@
 /// and Claude symlinks from `.claude/skills/`. Idempotent: safe to run on
 /// projects that were never initialized.
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use std::path::Path;
 
 use crate::project;
 
 const SKILL_NAMES: &[&str] = &["facts", "facts-discover", "facts-implement"];
 
-pub fn run() -> Result<()> {
+pub fn run(force: bool) -> Result<()> {
     let root = project::find_project_root()?;
-    run_in(&root)
+    run_in(&root, force)
 }
 
-fn run_in(root: &Path) -> Result<()> {
+fn run_in(root: &Path, force: bool) -> Result<()> {
     let facts_path = root.join(".facts");
     if facts_path.exists() {
+        let content = std::fs::read_to_string(&facts_path)?;
+        if !content.trim().is_empty() && !force {
+            bail!(".facts has content; use --force to delete");
+        }
         std::fs::remove_file(&facts_path)?;
         println!("  remove  .facts");
     } else {
@@ -93,7 +97,7 @@ mod tests {
         assert!(dir.path().join(".facts").exists());
         assert!(dir.path().join(".agents/skills/facts/SKILL.md").exists());
 
-        run_in(dir.path()).unwrap();
+        run_in(dir.path(), true).unwrap();
 
         assert!(!dir.path().join(".facts").exists());
         assert!(!dir.path().join(".agents/skills/facts/SKILL.md").exists());
@@ -111,7 +115,7 @@ mod tests {
     fn test_uninit_cleans_empty_dirs() {
         let dir = setup_initialized_project();
 
-        run_in(dir.path()).unwrap();
+        run_in(dir.path(), true).unwrap();
 
         assert!(!dir.path().join(".agents/skills").exists());
         assert!(!dir.path().join(".agents").exists());
@@ -140,7 +144,7 @@ mod tests {
         std::os::unix::fs::symlink(&target, link_dir.join("facts")).unwrap();
         assert!(link_dir.join("facts").is_symlink());
 
-        run_in(dir.path()).unwrap();
+        run_in(dir.path(), true).unwrap();
 
         assert!(!link_dir.join("facts").exists());
     }
@@ -153,7 +157,7 @@ mod tests {
         std::fs::create_dir_all(other.parent().unwrap()).unwrap();
         std::fs::write(&other, "# custom").unwrap();
 
-        run_in(dir.path()).unwrap();
+        run_in(dir.path(), true).unwrap();
 
         assert!(!dir
             .path()
@@ -168,7 +172,7 @@ mod tests {
         let dir = setup_initialized_project();
         std::fs::write(dir.path().join("cli.facts"), "- cli fact\n").unwrap();
 
-        run_in(dir.path()).unwrap();
+        run_in(dir.path(), true).unwrap();
 
         assert!(!dir.path().join(".facts").exists());
         assert!(dir.path().join("cli.facts").exists());
@@ -179,8 +183,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir(dir.path().join(".git")).unwrap();
 
-        assert!(run_in(dir.path()).is_ok());
-        assert!(run_in(dir.path()).is_ok());
+        assert!(run_in(dir.path(), false).is_ok());
+        assert!(run_in(dir.path(), false).is_ok());
     }
 
     #[test]
@@ -193,7 +197,7 @@ mod tests {
         assert!(dir.path().join(".facts").exists());
         assert!(dir.path().join(".agents/skills/facts/SKILL.md").exists());
 
-        run_in(dir.path()).unwrap();
+        run_in(dir.path(), true).unwrap();
         assert!(!dir.path().join(".facts").exists());
         assert!(!dir.path().join(".agents").exists());
     }
