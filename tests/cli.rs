@@ -2078,6 +2078,64 @@ fn check_rejects_empty_tag_expr() {
         .stderr(predicate::str::contains("invalid tag expression"));
 }
 
+// ===========================================================================
+// input validation — empty labels
+// ===========================================================================
+
+#[test]
+fn add_rejects_empty_label() {
+    let dir = empty_project();
+    facts_cmd(&dir)
+        .args(["add", ""])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("label cannot be empty"));
+}
+
+#[test]
+fn add_rejects_label_that_is_only_tags() {
+    let dir = empty_project();
+    facts_cmd(&dir)
+        .args(["add", "@mvp"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("label cannot be empty"));
+}
+
+#[test]
+fn add_rejects_whitespace_only_label() {
+    let dir = empty_project();
+    facts_cmd(&dir)
+        .args(["add", "   "])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("label cannot be empty"));
+}
+
+#[test]
+fn edit_rejects_empty_label() {
+    let dir = project("- original fact\n");
+    let list_output = facts_cmd(&dir)
+        .arg("list")
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&list_output.stdout);
+    let id = stdout
+        .lines()
+        .find(|l| l.contains("original fact"))
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap()
+        .to_string();
+
+    facts_cmd(&dir)
+        .args(["edit", &id, "--label", ""])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("label cannot be empty"));
+}
+
 #[test]
 fn remove_readonly_file_fails_without_printing_label() {
     use std::os::unix::fs::PermissionsExt;
