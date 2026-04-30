@@ -1955,6 +1955,96 @@ fn add_accepts_valid_relative_file_path() {
 }
 
 // ===========================================================================
+// Reserved key prefix round-trip safety (ISSUE-009)
+// ===========================================================================
+
+#[test]
+fn add_label_starting_with_command_roundtrips() {
+    let dir = project("");
+    // Add a plain fact whose label starts with "command:"
+    facts_cmd(&dir)
+        .args(["add", "command: echo hello"])
+        .assert()
+        .success();
+
+    // Verify lint passes (file is not corrupted)
+    facts_cmd(&dir)
+        .arg("lint")
+        .assert()
+        .success();
+
+    // Verify the full label is preserved on list
+    facts_cmd(&dir)
+        .arg("list")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("command: echo hello"));
+}
+
+#[test]
+fn add_label_starting_with_label_roundtrips() {
+    let dir = project("");
+    // Add a plain fact whose label starts with "label:"
+    facts_cmd(&dir)
+        .args(["add", "label: something"])
+        .assert()
+        .success();
+
+    // Verify lint passes
+    facts_cmd(&dir)
+        .arg("lint")
+        .assert()
+        .success();
+
+    // Verify the full label is preserved (not silently truncated)
+    facts_cmd(&dir)
+        .arg("list")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("label: something"));
+}
+
+#[test]
+fn add_label_starting_with_id_roundtrips() {
+    let dir = project("");
+    facts_cmd(&dir)
+        .args(["add", "id: something"])
+        .assert()
+        .success();
+
+    facts_cmd(&dir)
+        .arg("lint")
+        .assert()
+        .success();
+
+    facts_cmd(&dir)
+        .arg("list")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("id: something"));
+}
+
+#[test]
+fn add_label_starting_with_tags_roundtrips() {
+    let dir = project("");
+    facts_cmd(&dir)
+        .args(["add", "tags: [a, b]"])
+        .assert()
+        .success();
+
+    facts_cmd(&dir)
+        .arg("lint")
+        .assert()
+        .success();
+
+    facts_cmd(&dir)
+        .arg("list")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("tags: [a, b]"));
+}
+
+// ===========================================================================
 // Invalid tag expressions (ISSUE-004)
 // ===========================================================================
 

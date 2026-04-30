@@ -60,10 +60,35 @@ fn write_facts(out: &mut String, facts: &[Fact], is_preamble: bool) {
     }
 }
 
+/// Check if a plain fact label would be misinterpreted as a mapping key
+/// when written as `- {label}`. Mirrors `is_single_line_mapping` in parser.rs.
+fn is_ambiguous_as_plain(label: &str) -> bool {
+    let known_keys = ["label:", "command:", "id:", "tags:"];
+    for key in &known_keys {
+        if label.starts_with(key) {
+            return true;
+        }
+    }
+    if label.starts_with('{') && label.ends_with('}') {
+        return true;
+    }
+    false
+}
+
 /// Serialize a single new fact to its raw text representation.
 /// This is used when creating facts via the `add` command.
 pub fn fact_to_raw(fact: &Fact) -> String {
     if fact.is_plain {
+        // If the label would be misinterpreted as a mapping key on re-parse,
+        // write it as a mapping fact with an explicit `label:` key instead.
+        if is_ambiguous_as_plain(&fact.label) {
+            let mut lines = vec![format!("- label: {}", fact.label)];
+            if !fact.tags.is_empty() {
+                let tag_list = fact.tags.join(", ");
+                lines.push(format!("  tags: [{tag_list}]"));
+            }
+            return lines.join("\n");
+        }
         // Plain string fact
         let mut line = format!("- {}", fact.label);
         // Tags go inline for plain string facts
@@ -223,5 +248,91 @@ mod tests {
             fact_to_raw(&fact),
             "- label: full fact\n  id: xyz\n  command: echo ok\n  tags: [mvp]"
         );
+    }
+
+    #[test]
+    fn test_fact_to_raw_plain_with_reserved_prefix_command() {
+        let fact = Fact {
+            explicit_id: None,
+            label: "command: echo hello".to_string(),
+            command: None,
+            tags: vec![],
+            is_plain: true,
+            raw: String::new(),
+            blank_lines_before: 0,
+        };
+        // Must be written as mapping to avoid misparse
+        assert_eq!(fact_to_raw(&fact), "- label: command: echo hello");
+    }
+
+    #[test]
+    fn test_fact_to_raw_plain_with_reserved_prefix_label() {
+        let fact = Fact {
+            explicit_id: None,
+            label: "label: something".to_string(),
+            command: None,
+            tags: vec![],
+            is_plain: true,
+            raw: String::new(),
+            blank_lines_before: 0,
+        };
+        assert_eq!(fact_to_raw(&fact), "- label: label: something");
+    }
+
+    #[test]
+    fn test_fact_to_raw_plain_with_reserved_prefix_id() {
+        let fact = Fact {
+            explicit_id: None,
+            label: "id: something".to_string(),
+            command: None,
+            tags: vec![],
+            is_plain: true,
+            raw: String::new(),
+            blank_lines_before: 0,
+        };
+        assert_eq!(fact_to_raw(&fact), "- label: id: something");
+    }
+
+    #[test]
+    fn test_fact_to_raw_plain_with_reserved_prefix_tags() {
+        let fact = Fact {
+            explicit_id: None,
+            label: "tags: [a, b]".to_string(),
+            command: None,
+            tags: vec![],
+            is_plain: true,
+            raw: String::new(),
+            blank_lines_before: 0,
+        };
+        assert_eq!(fact_to_raw(&fact), "- label: tags: [a, b]");
+    }
+
+    #[test]
+    fn test_is_ambiguous_as_plain() {
+        assert!(is_ambiguous_as_plain("command: echo hello"));
+        assert!(is_ambiguous_as_plain("label: something"));
+        assert!(is_ambiguous_as_plain("id: xyz"));
+        assert!(is_ambiguous_as_plain("tags: [a]"));
+        assert!(!is_ambiguous_as_plain("a normal fact"));
+        assert!(!is_ambiguous_as_plain("note: this is fine"));
+    }
+
+    #[test]
+    fn test_roundtrip_ambiguous_plain_fact() {
+        // Write a plain fact with reserved prefix, then parse the result
+        let fact = Fact {
+            explicit_id: None,
+            label: "command: echo hello".to_string(),
+            command: None,
+            tags: vec![],
+            is_plain: true,
+            raw: String::new(),
+            blank_lines_before: 0,
+        };
+        let raw = fact_to_raw(&fact);
+        let content = format!("{raw}\n");
+        let sheet = parser::parse(&content, ".facts").unwrap();
+        assert_eq!(sheet.preamble.len(), 1);
+        assert_eq!(sheet.preamble[0].label, "command: echo hello");
     }
 }
