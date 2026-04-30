@@ -291,9 +291,9 @@ fn parse_mapping_fact(lines: &[String], blank_lines_before: usize) -> Result<Fac
 
     let label = label.context("mapping fact missing required 'label' key")?;
 
-    // Deduplicate tags
-    mapping_tags.sort();
-    mapping_tags.dedup();
+    // Deduplicate tags while preserving original order
+    let mut seen = std::collections::HashSet::new();
+    mapping_tags.retain(|t| seen.insert(t.clone()));
 
     Ok(Fact {
         explicit_id,

@@ -52,6 +52,13 @@ fn run_in(opts: &AddOptions, root: &Path) -> Result<()> {
         }
     }
 
+    // Reject empty or whitespace-only explicit IDs.
+    if let Some(ref id) = opts.id {
+        if id.trim().is_empty() {
+            anyhow::bail!("ID cannot be empty");
+        }
+    }
+
     let filename = opts.file.as_deref().unwrap_or(".facts");
 
     // Reject absolute paths — there's no valid reason to use one.
@@ -205,7 +212,7 @@ fn ensure_section_path(
 pub fn parse_tags(tags_str: &str) -> Result<Vec<String>> {
     let tags: Vec<String> = tags_str
         .split(',')
-        .map(|t| t.trim().to_string())
+        .map(|t| t.trim().trim_start_matches('@').to_string())
         .filter(|t| !t.is_empty())
         .collect();
     for tag in &tags {
@@ -413,6 +420,30 @@ mod tests {
         assert_eq!(parse_tags("mvp,core").unwrap(), vec!["mvp", "core"]);
         assert_eq!(parse_tags("mvp, core, ").unwrap(), vec!["mvp", "core"]);
         assert_eq!(parse_tags("single").unwrap(), vec!["single"]);
+    }
+
+    #[test]
+    fn test_parse_tags_strips_at_prefix() {
+        assert_eq!(parse_tags("@mvp,@core").unwrap(), vec!["mvp", "core"]);
+        assert_eq!(parse_tags("@mvp,core").unwrap(), vec!["mvp", "core"]);
+        assert_eq!(parse_tags("@mvp").unwrap(), vec!["mvp"]);
+    }
+
+    #[test]
+    fn test_add_rejects_empty_id() {
+        let (dir, _facts_path) = setup_test_dir();
+
+        let opts = AddOptions {
+            label: "some fact".to_string(),
+            file: None,
+            section: None,
+            command: None,
+            id: Some("".to_string()),
+            tags: vec![],
+        };
+        let result = run_in(&opts, dir.path());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("ID cannot be empty"));
     }
 
     #[test]

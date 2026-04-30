@@ -539,6 +539,27 @@ fn lint_passes_with_unique_ids() {
         .stdout(predicate::str::contains("passed"));
 }
 
+#[test]
+fn lint_warns_bare_tags() {
+    let dir = project("- label: a fact\n  tags: mvp, core\n");
+    // Bare tags is a warning, not an error -- should still pass (exit 0)
+    facts_cmd(&dir)
+        .arg("lint")
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("tags should use bracket syntax"));
+}
+
+#[test]
+fn lint_passes_bracket_tags() {
+    let dir = project("- label: a fact\n  tags: [mvp, core]\n");
+    facts_cmd(&dir)
+        .arg("lint")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("passed"));
+}
+
 // ===========================================================================
 // init
 // ===========================================================================
@@ -2289,5 +2310,86 @@ fn add_trims_section_path_components() {
     let content = fs::read_to_string(dir.path().join(".facts")).unwrap();
     assert!(content.contains("# a\n"), "expected trimmed '# a' heading, got:\n{content}");
     assert!(content.contains("## b\n"), "expected trimmed '## b' heading, got:\n{content}");
+}
+
+#[test]
+fn edit_noop_preserves_mapping_tag_order() {
+    let facts = "- label: my fact\n  tags: [z-tag, a-tag, m-tag]\n";
+    let dir = project(facts);
+
+    // Get the fact ID
+    let list_output = facts_cmd(&dir).arg("list").output().unwrap();
+    let stdout = String::from_utf8_lossy(&list_output.stdout);
+    let id = stdout
+        .lines()
+        .find(|l| l.contains("my fact"))
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap();
+
+    // Perform a no-op edit (re-set the same label)
+    facts_cmd(&dir)
+        .args(["edit", id, "--label", "my fact"])
+        .assert()
+        .success();
+
+    let after = fs::read_to_string(dir.path().join(".facts")).unwrap();
+    assert_eq!(
+        facts, after,
+        "no-op edit must not reorder tags; expected:\n{facts}\ngot:\n{after}"
+    );
+}
+
+// ===========================================================================
+// ISSUE-016: Tags with @ prefix create @@ in file
+// ===========================================================================
+
+#[test]
+fn add_strips_at_prefix_from_tags() {
+    let dir = empty_project();
+    facts_cmd(&dir)
+        .args(["add", "test fact", "--tags", "@mvp"])
+        .assert()
+        .success();
+    let content = fs::read_to_string(dir.path().join(".facts")).unwrap();
+    assert!(
+        content.contains("@mvp"),
+        "should contain @mvp, got:\n{content}"
+    );
+    assert!(
+        !content.contains("@@mvp"),
+        "should NOT contain @@mvp, got:\n{content}"
+    );
+    // Also verify list --tags finds it
+    facts_cmd(&dir)
+        .args(["list", "--tags", "mvp"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("test fact"));
+}
+
+// ===========================================================================
+// ISSUE-018: Empty explicit IDs accepted
+// ===========================================================================
+
+#[test]
+fn add_rejects_empty_id() {
+    let dir = empty_project();
+    facts_cmd(&dir)
+        .args(["add", "test fact", "--id", ""])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("ID cannot be empty"));
+}
+
+#[test]
+fn edit_rejects_empty_new_id() {
+    let dir = project("- label: fact\n  id: f1\n");
+    facts_cmd(&dir)
+        .args(["edit", "f1", "--new-id", ""])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("ID cannot be empty"));
 }
 

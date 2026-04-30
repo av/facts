@@ -139,6 +139,7 @@ pub fn lint_content(content: &str, filename: &str) -> Vec<LintDiagnostic> {
     check_line_structure(content, filename, &mut diagnostics);
     check_invalid_keys(content, filename, &mut diagnostics);
     check_mixed_tags(content, filename, &mut diagnostics);
+    check_bare_tags(content, filename, &mut diagnostics);
 
     // Also try parsing; if the parser catches something our line-level
     // checks didn't, report that too. If parsing succeeds, run model-level
@@ -207,6 +208,37 @@ fn check_mixed_tags(content: &str, filename: &str, diagnostics: &mut Vec<LintDia
                 message: "mixed inline and mapping tags on the same fact".to_string(),
                 severity: Severity::Warning,
             });
+        }
+    }
+}
+
+/// Check for `tags:` values that are not wrapped in brackets.
+///
+/// Bare comma-separated values like `tags: mvp, core` are silently ignored
+/// by the parser. Warn users to use bracket syntax: `tags: [mvp, core]`.
+fn check_bare_tags(content: &str, filename: &str, diagnostics: &mut Vec<LintDiagnostic>) {
+    let lines: Vec<&str> = content.lines().collect();
+    let fact_groups = group_fact_lines(&lines);
+
+    for group in fact_groups {
+        for (offset, line) in group.lines.iter().enumerate() {
+            let trimmed = line.trim();
+            let stripped = trimmed.strip_prefix("- ").unwrap_or(trimmed);
+
+            if let Some(val) = stripped.strip_prefix("tags: ") {
+                let val = val.trim();
+                if !val.is_empty() && !(val.starts_with('[') && val.ends_with(']')) {
+                    diagnostics.push(LintDiagnostic {
+                        file: filename.to_string(),
+                        line: Some(group.start_line + offset),
+                        message: format!(
+                            "tags should use bracket syntax: tags: [{}]",
+                            val
+                        ),
+                        severity: Severity::Warning,
+                    });
+                }
+            }
         }
     }
 }
@@ -512,5 +544,28 @@ mod tests {
 ";
         let diags = lint_content(content, ".facts");
         assert!(diags.is_empty(), "expected no diagnostics for unique ids, got: {diags:?}");
+    }
+
+    #[test]
+    fn test_lint_warns_bare_tags() {
+        let content = "- label: my fact\n  tags: mvp, core\n";
+        let diags = lint_content(content, ".facts");
+        let warnings: Vec<_> = diags
+            .iter()
+            .filter(|d| d.severity == Severity::Warning)
+            .collect();
+        assert_eq!(warnings.len(), 1, "expected 1 warning for bare tags");
+        assert!(warnings[0].message.contains("tags should use bracket syntax"));
+        assert!(warnings[0].message.contains("[mvp, core]"));
+    }
+
+    #[test]
+    fn test_lint_bracket_tags_pass() {
+        let content = "- label: my fact\n  tags: [mvp, core]\n";
+        let diags = lint_content(content, ".facts");
+        assert!(
+            diags.is_empty(),
+            "expected no diagnostics for bracket tags, got: {diags:?}"
+        );
     }
 }

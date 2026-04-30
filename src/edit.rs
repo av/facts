@@ -55,6 +55,13 @@ pub fn run_in(opts: &EditOptions, root: &Path) -> Result<()> {
         }
     }
 
+    // Reject empty or whitespace-only new IDs.
+    if let Some(ref new_id) = opts.new_id {
+        if new_id.trim().is_empty() {
+            anyhow::bail!("ID cannot be empty");
+        }
+    }
+
     // Acquire advisory lock to prevent concurrent modifications.
     let _lock = FileLock::acquire(root)?;
 
