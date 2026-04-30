@@ -518,6 +518,27 @@ fn lint_warns_mixed_tags() {
         .stderr(predicate::str::contains("mixed inline and mapping tags"));
 }
 
+#[test]
+fn lint_warns_duplicate_ids() {
+    let dir = project("- label: first\n  id: dupe\n- label: second\n  id: dupe\n");
+    // Duplicate IDs are a warning, not an error -- should still pass (exit 0)
+    facts_cmd(&dir)
+        .arg("lint")
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("duplicate"));
+}
+
+#[test]
+fn lint_passes_with_unique_ids() {
+    let dir = project("- label: first\n  id: aaa\n- label: second\n  id: bbb\n");
+    facts_cmd(&dir)
+        .arg("lint")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("passed"));
+}
+
 // ===========================================================================
 // init
 // ===========================================================================

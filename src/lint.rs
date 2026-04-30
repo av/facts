@@ -10,7 +10,10 @@
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 
+use std::collections::HashMap;
+
 use crate::color;
+use crate::model::FactSheet;
 use crate::parser;
 use crate::project;
 
@@ -138,15 +141,21 @@ pub fn lint_content(content: &str, filename: &str) -> Vec<LintDiagnostic> {
     check_mixed_tags(content, filename, &mut diagnostics);
 
     // Also try parsing; if the parser catches something our line-level
-    // checks didn't, report that too.
+    // checks didn't, report that too. If parsing succeeds, run model-level
+    // checks that need the parsed structure.
     if diagnostics.is_empty() {
-        if let Err(e) = parser::parse(content, filename) {
-            diagnostics.push(LintDiagnostic {
-                file: filename.to_string(),
-                line: None,
-                message: format!("failed to parse: {e}"),
-                severity: Severity::Error,
-            });
+        match parser::parse(content, filename) {
+            Ok(sheet) => {
+                check_duplicate_ids(&sheet, filename, &mut diagnostics);
+            }
+            Err(e) => {
+                diagnostics.push(LintDiagnostic {
+                    file: filename.to_string(),
+                    line: None,
+                    message: format!("failed to parse: {e}"),
+                    severity: Severity::Error,
+                });
+            }
         }
     }
 
@@ -196,6 +205,31 @@ fn check_mixed_tags(content: &str, filename: &str, diagnostics: &mut Vec<LintDia
                 file: filename.to_string(),
                 line: Some(group.start_line),
                 message: "mixed inline and mapping tags on the same fact".to_string(),
+                severity: Severity::Warning,
+            });
+        }
+    }
+}
+
+/// Check for duplicate explicit IDs across all facts in the sheet.
+fn check_duplicate_ids(sheet: &FactSheet, filename: &str, diagnostics: &mut Vec<LintDiagnostic>) {
+    let mut seen: HashMap<&str, usize> = HashMap::new();
+
+    for (_path, fact) in sheet.all_facts() {
+        if let Some(ref id) = fact.explicit_id {
+            let count = seen.entry(id.as_str()).or_insert(0);
+            *count += 1;
+        }
+    }
+
+    for (id, count) in &seen {
+        if *count > 1 {
+            diagnostics.push(LintDiagnostic {
+                file: filename.to_string(),
+                line: None,
+                message: format!(
+                    "duplicate explicit id '{id}' appears {count} times"
+                ),
                 severity: Severity::Warning,
             });
         }
@@ -451,5 +485,32 @@ mod tests {
         let diags = lint_content(content, ".facts");
         let errors: Vec<_> = diags.iter().filter(|d| d.severity == Severity::Error).collect();
         assert_eq!(errors.len(), 2, "expected 2 errors for 2 unknown keys");
+    }
+
+    #[test]
+    fn test_lint_catches_duplicate_ids() {
+        let content = "\
+- label: first fact
+  id: dupe
+- label: second fact
+  id: dupe
+";
+        let diags = lint_content(content, ".facts");
+        let warnings: Vec<_> = diags.iter().filter(|d| d.severity == Severity::Warning).collect();
+        assert_eq!(warnings.len(), 1, "expected 1 warning for duplicate id");
+        assert!(warnings[0].message.contains("duplicate"));
+        assert!(warnings[0].message.contains("dupe"));
+    }
+
+    #[test]
+    fn test_lint_unique_ids_pass() {
+        let content = "\
+- label: first fact
+  id: alpha
+- label: second fact
+  id: beta
+";
+        let diags = lint_content(content, ".facts");
+        assert!(diags.is_empty(), "expected no diagnostics for unique ids, got: {diags:?}");
     }
 }
