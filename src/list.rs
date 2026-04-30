@@ -81,11 +81,16 @@ pub fn run(opts: &ListOptions) -> Result<()> {
                 continue;
             }
 
-            // Apply section filter — exact path match.
-            // --section "cli" matches "cli", "cli/check", etc. but NOT "cli_tools".
+            // Apply section filter — case-insensitive path match (consistent
+            // with `add --section` which uses eq_ignore_ascii_case).
+            // --section "cli" matches "cli", "Cli", "cli/check", etc. but NOT "cli_tools".
             if let Some(ref section) = opts.section_filter {
                 let path_str = path.join("/");
-                if path_str != *section && !path_str.starts_with(&format!("{section}/")) {
+                let matches = path_str.eq_ignore_ascii_case(section)
+                    || (path_str.len() > section.len()
+                        && path_str[..section.len()].eq_ignore_ascii_case(section)
+                        && path_str.as_bytes()[section.len()] == b'/');
+                if !matches {
                     continue;
                 }
             }

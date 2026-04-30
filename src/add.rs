@@ -44,6 +44,13 @@ fn run_in(opts: &AddOptions, root: &Path) -> Result<()> {
         anyhow::bail!("label cannot be empty");
     }
 
+    // Reject empty or whitespace-only command strings.
+    if let Some(ref cmd) = opts.command {
+        if cmd.trim().is_empty() {
+            anyhow::bail!("command cannot be empty");
+        }
+    }
+
     let filename = opts.file.as_deref().unwrap_or(".facts");
 
     // Reject absolute paths — there's no valid reason to use one.
@@ -124,9 +131,9 @@ fn run_in(opts: &AddOptions, root: &Path) -> Result<()> {
 
 /// Add a fact to a section, creating the section path if needed.
 fn add_to_section(sheet: &mut FactSheet, section_path: &str, fact: Fact) -> Result<()> {
-    let parts: Vec<&str> = section_path.split('/').collect();
+    let parts: Vec<&str> = section_path.split('/').map(|p| p.trim()).collect();
 
-    if parts.is_empty() || parts.iter().any(|p| p.trim().is_empty()) {
+    if parts.is_empty() || parts.iter().any(|p| p.is_empty()) {
         anyhow::bail!("section path cannot contain empty components");
     }
 

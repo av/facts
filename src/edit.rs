@@ -47,6 +47,13 @@ pub fn run_in(opts: &EditOptions, root: &Path) -> Result<()> {
         }
     }
 
+    // Reject empty or whitespace-only command strings.
+    if let Some(ref cmd) = opts.command {
+        if cmd.trim().is_empty() {
+            anyhow::bail!("command cannot be empty");
+        }
+    }
+
     let files = project::discover_fact_files(root)?;
 
     if files.is_empty() {

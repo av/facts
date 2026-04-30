@@ -1294,6 +1294,30 @@ fn section_filter_nested_includes_deep_children() {
         .stdout(predicate::str::contains("list fact").not());
 }
 
+#[test]
+fn section_filter_is_case_insensitive() {
+    // add --section uses case-insensitive matching, so list --section must too
+    let dir = project("# Api\n\n- upper fact\n");
+    // Filtering with lowercase "api" should match the "Api" section
+    facts_cmd(&dir)
+        .args(["list", "--section", "api"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("upper fact"));
+}
+
+#[test]
+fn section_filter_case_insensitive_nested() {
+    // Case-insensitive matching should also work for nested section paths
+    let dir = project("# Api\n\n## Auth\n\n- auth fact\n\n## Routing\n\n- route fact\n");
+    facts_cmd(&dir)
+        .args(["list", "--section", "api/auth"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("auth fact"))
+        .stdout(predicate::str::contains("route fact").not());
+}
+
 // ===========================================================================
 // Multi-file scenarios
 // ===========================================================================
@@ -2204,5 +2228,45 @@ fn add_accepts_valid_comma_separated_tags() {
     let content = fs::read_to_string(dir.path().join(".facts")).unwrap();
     assert!(content.contains("@valid"));
     assert!(content.contains("@tags"));
+}
+
+// ===========================================================================
+// ISSUE-012: Empty command string accepted
+// ===========================================================================
+
+#[test]
+fn add_rejects_empty_command() {
+    let dir = empty_project();
+    facts_cmd(&dir)
+        .args(["add", "test", "--command", ""])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("command cannot be empty"));
+}
+
+#[test]
+fn edit_rejects_empty_command() {
+    let dir = project("- label: fact\n  command: echo ok\n  id: f1\n");
+    facts_cmd(&dir)
+        .args(["edit", "f1", "--command", ""])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("command cannot be empty"));
+}
+
+// ===========================================================================
+// ISSUE-013: Section path components not trimmed
+// ===========================================================================
+
+#[test]
+fn add_trims_section_path_components() {
+    let dir = empty_project();
+    facts_cmd(&dir)
+        .args(["add", "test", "--section", "a / b"])
+        .assert()
+        .success();
+    let content = fs::read_to_string(dir.path().join(".facts")).unwrap();
+    assert!(content.contains("# a\n"), "expected trimmed '# a' heading, got:\n{content}");
+    assert!(content.contains("## b\n"), "expected trimmed '## b' heading, got:\n{content}");
 }
 
