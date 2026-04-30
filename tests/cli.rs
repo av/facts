@@ -1074,3 +1074,66 @@ fn tags_nested_parens() {
         .stdout(predicate::str::contains("fact b"))
         .stdout(predicate::str::contains("fact c").not());
 }
+
+// ===========================================================================
+// Exact section matching
+// ===========================================================================
+
+#[test]
+fn section_filter_exact_match_includes_subsections() {
+    // --section "cli" should match "cli" and "cli/check" but not "cli_tools"
+    let dir = project(
+        "# cli\n\n- cli fact\n\n## check\n\n- check fact\n\n# cli_tools\n\n- tools fact\n",
+    );
+    facts_cmd(&dir)
+        .args(["list", "--section", "cli"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("cli fact"))
+        .stdout(predicate::str::contains("check fact"))
+        .stdout(predicate::str::contains("tools fact").not());
+}
+
+#[test]
+fn section_filter_does_not_substring_match() {
+    // --section "cli" must NOT match "cli_tools" (substring match would)
+    let dir = project(
+        "# cli_tools\n\n- tools fact\n\n# cli\n\n- cli fact\n",
+    );
+    facts_cmd(&dir)
+        .args(["list", "--section", "cli"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("cli fact"))
+        .stdout(predicate::str::contains("tools fact").not());
+}
+
+#[test]
+fn section_filter_exact_nested_path() {
+    // --section "cli/check" matches exactly "cli > check", not "cli > checkout"
+    let dir = project(
+        "# cli\n\n## check\n\n- check fact\n\n## checkout\n\n- checkout fact\n\n## list\n\n- list fact\n",
+    );
+    facts_cmd(&dir)
+        .args(["list", "--section", "cli/check"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("check fact"))
+        .stdout(predicate::str::contains("checkout fact").not())
+        .stdout(predicate::str::contains("list fact").not());
+}
+
+#[test]
+fn section_filter_nested_includes_deep_children() {
+    // --section "cli/check" should also match "cli/check/output"
+    let dir = project(
+        "# cli\n\n## check\n\n- check fact\n\n### output\n\n- output fact\n\n## list\n\n- list fact\n",
+    );
+    facts_cmd(&dir)
+        .args(["list", "--section", "cli/check"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("check fact"))
+        .stdout(predicate::str::contains("output fact"))
+        .stdout(predicate::str::contains("list fact").not());
+}

@@ -71,10 +71,11 @@ pub fn run(opts: &ListOptions) -> Result<()> {
                 continue;
             }
 
-            // Apply section filter
+            // Apply section filter — exact path match.
+            // --section "cli" matches "cli", "cli/check", etc. but NOT "cli_tools".
             if let Some(ref section) = opts.section_filter {
                 let path_str = path.join("/");
-                if !path_str.contains(section.as_str()) {
+                if path_str != *section && !path_str.starts_with(&format!("{section}/")) {
                     continue;
                 }
             }
