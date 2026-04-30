@@ -1,3 +1,5 @@
+mod check;
+mod color;
 mod id;
 mod list;
 mod model;
@@ -39,34 +41,60 @@ enum Command {
         #[arg(long)]
         tags: Option<String>,
     },
+
+    /// Run all command-facts, report pass/fail/manual.
+    Check {
+        /// Boolean tag filter expression (e.g. "mvp and not blocked").
+        #[arg(long)]
+        tags: Option<String>,
+
+        /// Per-command timeout in seconds.
+        #[arg(long)]
+        timeout: Option<u64>,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
-    let opts = match cli.command {
+    match cli.command {
         Some(Command::List {
             file,
             section,
             has_command,
             manual,
             tags,
-        }) => list::ListOptions {
-            file_filter: file,
-            section_filter: section,
-            has_command,
-            manual,
-            tags_expr: tags,
-        },
-        None => list::ListOptions {
-            file_filter: None,
-            section_filter: None,
-            has_command: false,
-            manual: false,
-            tags_expr: None,
-        },
-    };
-    list::run(&opts)?;
+        }) => {
+            let opts = list::ListOptions {
+                file_filter: file,
+                section_filter: section,
+                has_command,
+                manual,
+                tags_expr: tags,
+            };
+            list::run(&opts)?;
+        }
+        Some(Command::Check { tags, timeout }) => {
+            let opts = check::CheckOptions {
+                tags_expr: tags,
+                timeout,
+            };
+            let all_passed = check::run(&opts)?;
+            if !all_passed {
+                std::process::exit(1);
+            }
+        }
+        None => {
+            let opts = list::ListOptions {
+                file_filter: None,
+                section_filter: None,
+                has_command: false,
+                manual: false,
+                tags_expr: None,
+            };
+            list::run(&opts)?;
+        }
+    }
 
     Ok(())
 }
