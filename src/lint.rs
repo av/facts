@@ -133,6 +133,9 @@ fn resolve_files(root: &Path, opts: &LintOptions) -> Result<Vec<PathBuf>> {
 pub fn lint_content(content: &str, filename: &str) -> Vec<LintDiagnostic> {
     let mut diagnostics = Vec::new();
 
+    // Check for CRLF line endings before any other checks.
+    check_crlf(content, filename, &mut diagnostics);
+
     // Run all structural checks directly on the raw content.
     // These work independently of the parser so they catch issues even
     // if the parser would bail on the same content.
@@ -161,6 +164,21 @@ pub fn lint_content(content: &str, filename: &str) -> Vec<LintDiagnostic> {
     }
 
     diagnostics
+}
+
+/// Check if the file content contains CRLF line endings.
+///
+/// The facts writer always normalizes to LF, so CRLF input will not
+/// round-trip byte-for-byte. Warn early so users know to convert.
+fn check_crlf(content: &str, filename: &str, diagnostics: &mut Vec<LintDiagnostic>) {
+    if content.contains("\r\n") {
+        diagnostics.push(LintDiagnostic {
+            file: filename.to_string(),
+            line: None,
+            message: "file uses CRLF line endings; facts normalizes to LF on write".to_string(),
+            severity: Severity::Warning,
+        });
+    }
 }
 
 /// Check for mixed inline and mapping tags on the same fact.
@@ -567,5 +585,22 @@ mod tests {
             diags.is_empty(),
             "expected no diagnostics for bracket tags, got: {diags:?}"
         );
+    }
+
+    #[test]
+    fn test_check_crlf_warns_on_crlf() {
+        let mut diagnostics = Vec::new();
+        check_crlf("- a fact\r\n- another\r\n", ".facts", &mut diagnostics);
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].severity, Severity::Warning);
+        assert!(diagnostics[0].message.contains("CRLF"));
+        assert!(diagnostics[0].message.contains("LF"));
+    }
+
+    #[test]
+    fn test_check_crlf_passes_on_lf() {
+        let mut diagnostics = Vec::new();
+        check_crlf("- a fact\n- another\n", ".facts", &mut diagnostics);
+        assert!(diagnostics.is_empty(), "expected no CRLF warning for LF content");
     }
 }

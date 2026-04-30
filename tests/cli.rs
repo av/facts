@@ -560,6 +560,27 @@ fn lint_passes_bracket_tags() {
         .stdout(predicate::str::contains("passed"));
 }
 
+#[test]
+fn lint_warns_crlf_line_endings() {
+    let dir = project("- a fact\r\n- another fact\r\n");
+    // CRLF is a warning, not an error -- should still pass (exit 0)
+    facts_cmd(&dir)
+        .arg("lint")
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("CRLF line endings"));
+}
+
+#[test]
+fn lint_passes_lf_line_endings() {
+    let dir = project("- a fact\n- another fact\n");
+    facts_cmd(&dir)
+        .arg("lint")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("passed"));
+}
+
 // ===========================================================================
 // init
 // ===========================================================================
