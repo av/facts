@@ -17,11 +17,13 @@ use crate::project;
 const FACTS_SKILL: &str = include_str!("../skills/facts/SKILL.md");
 const DISCOVER_SKILL: &str = include_str!("../skills/facts-discover/SKILL.md");
 const IMPLEMENT_SKILL: &str = include_str!("../skills/facts-implement/SKILL.md");
+const REFINE_SKILL: &str = include_str!("../skills/facts-refine/SKILL.md");
 
 const SKILLS: &[(&str, &str)] = &[
     ("facts", FACTS_SKILL),
     ("facts-discover", DISCOVER_SKILL),
     ("facts-implement", IMPLEMENT_SKILL),
+    ("facts-refine", REFINE_SKILL),
 ];
 
 const SECTION_START: &str = "<!-- facts:start -->";
@@ -39,6 +41,7 @@ This project uses [facts](https://github.com/av/facts) — a CLI that manages `.
 
 **Three distinct workflows — do not confuse them:**
 - **Define** — write new facts as specification. The user says \"add facts\", \"define the spec\", \"work on facts\". Do NOT remove unimplemented facts — they represent intended work.
+- **Refine** (`facts-refine` skill) — collaboratively sharpen vague facts, resolve contradictions, fill gaps. When the user says \"refine\", \"clarify\", or \"review the facts\".
 - **Discover** (`facts-discover` skill) — scan the codebase and sync the fact sheet to match reality. Only when the user explicitly asks to discover, audit, or sync.
 - **Implement** (`facts-implement` skill) — make unimplemented facts true in code. Only when the user explicitly asks to implement.
 

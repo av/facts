@@ -121,8 +121,8 @@
 - label: detects well-known framework/runtime combos (e.g. Cargo.toml, package.json)
   command: grep -q "Cargo.toml\|package.json" src/init.rs
 - scaffolds initial facts based on detected stack
-- label: installs three agent skills to .agents/skills/ (facts, facts-discover, facts-implement)
-  command: grep -q "facts.*facts-discover.*facts-implement\|SKILLS" src/init.rs
+- label: installs four agent skills to .agents/skills/ (facts, facts-discover, facts-implement, facts-refine)
+  command: grep -q "facts.*facts-discover.*facts-implement.*facts-refine\|SKILLS" src/init.rs
 - label: creates .claude/skills/ symlinks for Claude Code integration
   command: grep -q "claude.*skills\|\.claude" src/init.rs
 - init is idempotent — safe to run multiple times
@@ -331,3 +331,13 @@
 - reports remaining work and blockers if it cannot complete everything
 - label: source is in ./skills/facts-implement/
   command: test -f skills/facts-implement/SKILL.md
+
+### facts-refine
+- label: instructs agent to collaboratively sharpen vague facts, resolve contradictions, and fill gaps
+  command: grep -q "ambiguit\|contradict\|sharpen\|gaps" skills/facts-refine/SKILL.md
+- interactive — proposes changes, user decides
+- every change discussed with user before applying
+- label: identifies vague, compound, contradictory, and gapped facts
+  command: grep -q "Vague\|Compound\|Contradict\|Gap" skills/facts-refine/SKILL.md
+- label: source is in ./skills/facts-refine/
+  command: test -f skills/facts-refine/SKILL.md

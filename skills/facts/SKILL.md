@@ -148,5 +148,6 @@ facts add "new truth" --section foo     # add discovered truths
 
 ## Companion skills
 
+- **facts-refine** — collaboratively sharpen vague facts, resolve contradictions, and fill gaps. Use when the fact sheet needs quality improvement.
 - **facts-discover** — scan the codebase and make the fact sheet match reality. Use when you need to bootstrap or update the fact sheet from existing code.
 - **facts-implement** — read the fact sheet as a spec and implement all unimplemented facts in code. Use when the fact sheet is ahead of the codebase.

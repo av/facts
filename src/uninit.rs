@@ -8,7 +8,7 @@ use std::path::Path;
 
 use crate::project;
 
-const SKILL_NAMES: &[&str] = &["facts", "facts-discover", "facts-implement"];
+const SKILL_NAMES: &[&str] = &["facts", "facts-discover", "facts-implement", "facts-refine"];
 
 pub fn run(force: bool) -> Result<()> {
     let root = project::find_project_root()?;
