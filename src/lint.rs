@@ -155,6 +155,7 @@ pub fn lint_content(content: &str, filename: &str) -> Vec<LintDiagnostic> {
         match parser::parse(content, filename) {
             Ok(sheet) => {
                 check_duplicate_ids(&sheet, filename, &mut diagnostics);
+                check_empty_labels(&sheet, filename, &mut diagnostics);
             }
             Err(e) => {
                 diagnostics.push(LintDiagnostic {
@@ -284,6 +285,23 @@ fn check_duplicate_ids(sheet: &FactSheet, filename: &str, diagnostics: &mut Vec<
                 message: format!(
                     "duplicate explicit id '{id}' appears {count} times"
                 ),
+                severity: Severity::Warning,
+            });
+        }
+    }
+}
+
+/// Check for facts with empty or whitespace-only labels.
+///
+/// The `add` command rejects empty labels, but hand-edited files can
+/// contain `- ` (dash-space with nothing after it). Warn about these.
+fn check_empty_labels(sheet: &FactSheet, filename: &str, diagnostics: &mut Vec<LintDiagnostic>) {
+    for (_path, fact) in sheet.all_facts() {
+        if fact.label.trim().is_empty() {
+            diagnostics.push(LintDiagnostic {
+                file: filename.to_string(),
+                line: None,
+                message: "fact has empty label".to_string(),
                 severity: Severity::Warning,
             });
         }
@@ -661,5 +679,21 @@ mod tests {
         let mut diagnostics = Vec::new();
         check_crlf("- a fact\n- another\n", ".facts", &mut diagnostics);
         assert!(diagnostics.is_empty(), "expected no CRLF warning for LF content");
+    }
+
+    #[test]
+    fn test_lint_warns_empty_label() {
+        let content = "- \n";
+        let diags = lint_content(content, ".facts");
+        let warnings: Vec<_> = diags.iter().filter(|d| d.severity == Severity::Warning).collect();
+        assert_eq!(warnings.len(), 1, "expected 1 warning for empty label, got: {diags:?}");
+        assert!(warnings[0].message.contains("empty label"));
+    }
+
+    #[test]
+    fn test_lint_passes_nonempty_labels() {
+        let content = "- a real fact\n- another fact\n";
+        let diags = lint_content(content, ".facts");
+        assert!(diags.is_empty(), "expected no diagnostics, got: {diags:?}");
     }
 }

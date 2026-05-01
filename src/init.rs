@@ -52,7 +52,9 @@ pub fn run() -> Result<()> {
 fn run_in(root: &Path) -> Result<()> {
     let facts_path = root.join(".facts");
 
-    if facts_path.exists() {
+    if facts_path.exists() && !facts_path.is_file() {
+        anyhow::bail!(".facts exists but is not a file");
+    } else if facts_path.is_file() {
         println!("  skip  .facts (already exists)");
     } else {
         let stacks = detect_stacks(root);
@@ -1559,6 +1561,18 @@ mod tests {
         assert!(content.contains("  command: test -f Cargo.toml"));
         assert!(content.contains("- label: all tests pass"));
         assert!(content.contains("  command: cargo test --quiet"));
+    }
+
+    #[test]
+    fn test_init_errors_when_facts_is_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        std::fs::create_dir(dir.path().join(".facts")).unwrap();
+
+        let result = run_in(dir.path());
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("not a file"), "unexpected error: {msg}");
     }
 
     #[test]
