@@ -799,6 +799,112 @@ fn uninit_deletes_empty_file_without_force() {
     assert!(!dir.path().join(".facts").exists());
 }
 
+// ===========================================================================
+// init/uninit — agent docs (CLAUDE.md / AGENTS.md)
+// ===========================================================================
+
+#[test]
+fn init_creates_agents_md_with_facts_section() {
+    let dir = empty_project();
+    facts_cmd(&dir).arg("init").assert().success();
+    let content = fs::read_to_string(dir.path().join("AGENTS.md")).unwrap();
+    assert!(content.contains("<!-- facts:start -->"));
+    assert!(content.contains("<!-- facts:end -->"));
+    assert!(content.contains("facts check"));
+}
+
+#[test]
+fn init_appends_to_existing_claude_md() {
+    let dir = empty_project();
+    fs::write(dir.path().join("CLAUDE.md"), "# My Project\n").unwrap();
+    facts_cmd(&dir).arg("init").assert().success();
+    let content = fs::read_to_string(dir.path().join("CLAUDE.md")).unwrap();
+    assert!(content.starts_with("# My Project\n"));
+    assert!(content.contains("<!-- facts:start -->"));
+    assert!(!dir.path().join("AGENTS.md").exists());
+}
+
+#[test]
+fn init_writes_to_both_md_files_when_both_exist() {
+    let dir = empty_project();
+    fs::write(dir.path().join("CLAUDE.md"), "# Claude\n").unwrap();
+    fs::write(dir.path().join("AGENTS.md"), "# Agents\n").unwrap();
+    facts_cmd(&dir).arg("init").assert().success();
+    assert!(
+        fs::read_to_string(dir.path().join("CLAUDE.md"))
+            .unwrap()
+            .contains("<!-- facts:start -->")
+    );
+    assert!(
+        fs::read_to_string(dir.path().join("AGENTS.md"))
+            .unwrap()
+            .contains("<!-- facts:start -->")
+    );
+}
+
+#[test]
+fn uninit_removes_facts_section_from_claude_md() {
+    let dir = empty_project();
+    fs::write(dir.path().join("CLAUDE.md"), "# Claude\n").unwrap();
+    facts_cmd(&dir).arg("init").assert().success();
+    facts_cmd(&dir)
+        .arg("uninit")
+        .arg("--force")
+        .assert()
+        .success();
+    let content = fs::read_to_string(dir.path().join("CLAUDE.md")).unwrap();
+    assert!(!content.contains("<!-- facts:start -->"));
+    assert_eq!(content, "# Claude\n");
+}
+
+#[test]
+fn uninit_removes_agents_md_when_only_facts_section() {
+    let dir = empty_project();
+    facts_cmd(&dir).arg("init").assert().success();
+    assert!(dir.path().join("AGENTS.md").exists());
+    facts_cmd(&dir)
+        .arg("uninit")
+        .arg("--force")
+        .assert()
+        .success();
+    assert!(!dir.path().join("AGENTS.md").exists());
+}
+
+#[test]
+fn uninit_removes_section_from_middle_of_file() {
+    let dir = empty_project();
+    let content = "# Top\n\n<!-- facts:start -->\n## Fact-driven development\nstuff\n<!-- facts:end -->\n\n## Bottom\n";
+    fs::write(dir.path().join("CLAUDE.md"), content).unwrap();
+    facts_cmd(&dir).arg("uninit").assert().success();
+    let result = fs::read_to_string(dir.path().join("CLAUDE.md")).unwrap();
+    assert!(!result.contains("facts:start"));
+    assert!(result.contains("# Top"));
+    assert!(result.contains("## Bottom"));
+}
+
+#[test]
+fn uninit_removes_from_both_files() {
+    let dir = empty_project();
+    fs::write(dir.path().join("CLAUDE.md"), "# Claude\n").unwrap();
+    fs::write(dir.path().join("AGENTS.md"), "# Agents\n").unwrap();
+    facts_cmd(&dir).arg("init").assert().success();
+    facts_cmd(&dir)
+        .arg("uninit")
+        .arg("--force")
+        .assert()
+        .success();
+    assert!(
+        !fs::read_to_string(dir.path().join("CLAUDE.md"))
+            .unwrap()
+            .contains("facts:start")
+    );
+    assert!(
+        !fs::read_to_string(dir.path().join("AGENTS.md"))
+            .unwrap()
+            .contains("facts:start")
+    );
+}
+
 // Edge cases / cross-cutting
 // ===========================================================================
 

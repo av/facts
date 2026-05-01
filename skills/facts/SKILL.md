@@ -111,12 +111,24 @@ Good validation commands are fast, idempotent, and test one thing. Prefer `test 
 
 ## Agent workflows
 
-**Understand a project:**
+**Start of work — always do this first:**
 ```
 facts list                              # read the full spec
 facts check                             # see what holds and what doesn't
-facts list --manual                     # see what needs human/agent judgment
 ```
+Use the fact sheet to orient before writing code. It is the source of truth for what the project should look like and what is already validated.
+
+**Define the spec (most common user intent):**
+When the user says "work on facts", "add facts", or "define the spec", they want to collaboratively define what should be true — not audit what already is.
+```
+facts add "users can sign up" --section features/auth
+facts add "signup returns 201" --command "curl -s ..." --section features/auth
+```
+- Discuss with the user what the project should look like
+- Add facts that describe intended behavior, structure, or constraints
+- Leave new facts without `@implemented` — they are spec, not documentation
+- Do NOT remove unimplemented facts — they represent intended future work
+- Do NOT run `facts-discover` unless the user explicitly asks to sync with reality
 
 **Track implementation progress:**
 ```
@@ -125,7 +137,8 @@ facts edit <id> --add-tag "implemented" # mark done
 facts check                             # verify
 ```
 
-**Maintain accuracy:**
+**Maintain accuracy during coding work:**
+When you add a feature, add corresponding facts. When you fix a bug, verify related facts still hold. When you remove code, remove obsolete facts.
 ```
 facts check                             # find failing facts
 facts edit <id> --label "corrected"     # fix inaccurate facts

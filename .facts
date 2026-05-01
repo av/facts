@@ -126,6 +126,13 @@
 - label: creates .claude/skills/ symlinks for Claude Code integration
   command: grep -q "claude.*skills\|\.claude" src/init.rs
 - init is idempotent — safe to run multiple times
+- label: init adds a fact-driven development section to CLAUDE.md or AGENTS.md
+  command: grep -q 'install_agent_docs\|AGENT_MD_FILES' src/init.rs
+- label: init creates AGENTS.md if no agent markdown file exists
+  command: grep -q 'AGENT_MD_FILES.last' src/init.rs
+- init appends to existing files, writes to both if both exist
+- label: the agent docs section uses HTML comment markers for surgical removal
+  command: grep -q 'facts:start.*facts:end\|SECTION_START\|SECTION_END' src/init.rs
 
 ### check
 - lints all files first — aborts early on lint errors
@@ -220,6 +227,10 @@
   command: grep -q "agents.*skills\|claude.*skills" src/uninit.rs
 - preserves named .facts files (only removes .facts)
 - uninit is idempotent — safe to run multiple times
+- label: uninit removes the facts section from CLAUDE.md and AGENTS.md
+  command: grep -q 'remove_agent_docs' src/uninit.rs
+- label: uninit deletes the file if the facts section was the only content
+  command: grep -q 'remove_file.*path\|was only facts' src/init.rs
 
 ## architecture
 
@@ -274,6 +285,10 @@
 - label: downloads the binary from GitHub releases
   command: test -f install.sh
 
+### local
+- label: local install via cargo install --path . copies the binary to ~/.local/bin/
+  command: test -f ~/.local/bin/facts
+
 ## skills
 
 - label: all skills are agent-agnostic
@@ -316,7 +331,3 @@
 - reports remaining work and blockers if it cannot complete everything
 - label: source is in ./skills/facts-implement/
   command: test -f skills/facts-implement/SKILL.md
-
-# distribution
-- label: local install via cargo install --path . copies the binary to ~/.local/bin/
-  command: test -f ~/.local/bin/facts

@@ -33,6 +33,8 @@ fn run_in(root: &Path, force: bool) -> Result<()> {
         remove_claude_link(root, name)?;
     }
 
+    crate::init::remove_agent_docs(root)?;
+
     remove_dir_if_empty(&root.join(".agents").join("skills"));
     remove_dir_if_empty(&root.join(".agents"));
     remove_dir_if_empty(&root.join(".claude").join("skills"));

@@ -24,6 +24,29 @@ const SKILLS: &[(&str, &str)] = &[
     ("facts-implement", IMPLEMENT_SKILL),
 ];
 
+const SECTION_START: &str = "<!-- facts:start -->";
+const SECTION_END: &str = "<!-- facts:end -->";
+
+const AGENT_DOCS_SECTION: &str = "\
+<!-- facts:start -->
+## Fact-driven development
+
+This project uses [facts](https://github.com/av/facts) — a CLI that manages `.facts` files containing atomic, validatable truth statements about the project. The fact sheet is both the spec and the documentation.
+
+**Start of work:** Run `facts list` to read the project spec. Run `facts check` to see what holds and what doesn't. Use this to orient before writing code.
+
+**During work:** Keep the fact sheet in sync. When you add a feature, add corresponding facts. When you fix a bug, verify related facts still hold. When you remove code, remove obsolete facts. Run `facts check` after significant changes.
+
+**Three distinct workflows — do not confuse them:**
+- **Define** — write new facts as specification. The user says \"add facts\", \"define the spec\", \"work on facts\". Do NOT remove unimplemented facts — they represent intended work.
+- **Discover** (`facts-discover` skill) — scan the codebase and sync the fact sheet to match reality. Only when the user explicitly asks to discover, audit, or sync.
+- **Implement** (`facts-implement` skill) — make unimplemented facts true in code. Only when the user explicitly asks to implement.
+
+When in doubt about which workflow the user wants, ask.
+<!-- facts:end -->";
+
+const AGENT_MD_FILES: &[&str] = &["CLAUDE.md", "AGENTS.md"];
+
 /// A detected project stack.
 #[derive(Debug, PartialEq)]
 pub struct DetectedStack {
@@ -76,6 +99,8 @@ fn run_in(root: &Path) -> Result<()> {
             link_skill_for_claude(root, name)?;
         }
     }
+
+    install_agent_docs(root)?;
 
     Ok(())
 }
@@ -160,6 +185,88 @@ fn link_skill_for_claude(root: &Path, name: &str) -> Result<()> {
 #[cfg(not(unix))]
 fn link_skill_for_claude(_root: &Path, name: &str) -> Result<()> {
     println!("  skip  .claude/skills/{name} (symlinks not supported on this platform)");
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Agent docs (CLAUDE.md / AGENTS.md)
+// ---------------------------------------------------------------------------
+
+fn install_agent_docs(root: &Path) -> Result<()> {
+    let mut installed = false;
+
+    for name in AGENT_MD_FILES {
+        let path = root.join(name);
+        if !path.is_file() {
+            continue;
+        }
+        let content = std::fs::read_to_string(&path)?;
+        if content.contains(SECTION_START) {
+            println!("  skip  {name} (facts section exists)");
+        } else {
+            let mut new_content = content.clone();
+            if !new_content.ends_with('\n') && !new_content.is_empty() {
+                new_content.push('\n');
+            }
+            if !new_content.is_empty() {
+                new_content.push('\n');
+            }
+            new_content.push_str(AGENT_DOCS_SECTION);
+            new_content.push('\n');
+            std::fs::write(&path, new_content)?;
+            println!("  update  {name} (added facts section)");
+        }
+        installed = true;
+    }
+
+    if !installed {
+        let name = AGENT_MD_FILES.last().unwrap();
+        let path = root.join(name);
+        let mut content = String::from(AGENT_DOCS_SECTION);
+        content.push('\n');
+        std::fs::write(&path, content)?;
+        println!("  create  {name} (with facts section)");
+    }
+
+    Ok(())
+}
+
+pub fn remove_agent_docs(root: &Path) -> Result<()> {
+    for name in AGENT_MD_FILES {
+        let path = root.join(name);
+        if !path.is_file() {
+            continue;
+        }
+        let content = std::fs::read_to_string(&path)?;
+        let Some(start) = content.find(SECTION_START) else {
+            continue;
+        };
+        let Some(end_marker) = content[start..].find(SECTION_END) else {
+            continue;
+        };
+        let end = start + end_marker + SECTION_END.len();
+
+        let before = content[..start].trim_end_matches('\n');
+        let after = content[end..].trim_start_matches('\n');
+
+        let new_content = if before.is_empty() && after.is_empty() {
+            String::new()
+        } else if before.is_empty() {
+            format!("{after}\n")
+        } else if after.is_empty() {
+            format!("{before}\n")
+        } else {
+            format!("{before}\n\n{after}\n")
+        };
+
+        if new_content.is_empty() {
+            std::fs::remove_file(&path)?;
+            println!("  remove  {name} (was only facts section)");
+        } else {
+            std::fs::write(&path, new_content)?;
+            println!("  update  {name} (removed facts section)");
+        }
+    }
     Ok(())
 }
 
@@ -1805,5 +1912,127 @@ mod tests {
         assert!(toml_has_section(toml, "tool.pytest"));
         assert!(toml_has_section(toml, "tool.ruff"));
         assert!(!toml_has_section(toml, "tool.mypy"));
+    }
+
+    // -- Agent docs --
+
+    #[test]
+    fn test_agent_docs_creates_agents_md_when_no_md_exists() {
+        let dir = tempfile::tempdir().unwrap();
+        install_agent_docs(dir.path()).unwrap();
+        let content = std::fs::read_to_string(dir.path().join("AGENTS.md")).unwrap();
+        assert!(content.contains(SECTION_START));
+        assert!(content.contains(SECTION_END));
+        assert!(content.contains("facts check"));
+        assert!(!dir.path().join("CLAUDE.md").exists());
+    }
+
+    #[test]
+    fn test_agent_docs_appends_to_existing_claude_md() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("CLAUDE.md"),
+            "# My Project\n\nExisting content.\n",
+        )
+        .unwrap();
+        install_agent_docs(dir.path()).unwrap();
+        let content = std::fs::read_to_string(dir.path().join("CLAUDE.md")).unwrap();
+        assert!(content.starts_with("# My Project\n\nExisting content.\n"));
+        assert!(content.contains(SECTION_START));
+        assert!(!dir.path().join("AGENTS.md").exists());
+    }
+
+    #[test]
+    fn test_agent_docs_appends_to_existing_agents_md() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("AGENTS.md"), "# Agents\n").unwrap();
+        install_agent_docs(dir.path()).unwrap();
+        let content = std::fs::read_to_string(dir.path().join("AGENTS.md")).unwrap();
+        assert!(content.starts_with("# Agents\n"));
+        assert!(content.contains(SECTION_START));
+    }
+
+    #[test]
+    fn test_agent_docs_writes_to_both_when_both_exist() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("CLAUDE.md"), "# Claude\n").unwrap();
+        std::fs::write(dir.path().join("AGENTS.md"), "# Agents\n").unwrap();
+        install_agent_docs(dir.path()).unwrap();
+        assert!(
+            std::fs::read_to_string(dir.path().join("CLAUDE.md"))
+                .unwrap()
+                .contains(SECTION_START)
+        );
+        assert!(
+            std::fs::read_to_string(dir.path().join("AGENTS.md"))
+                .unwrap()
+                .contains(SECTION_START)
+        );
+    }
+
+    #[test]
+    fn test_agent_docs_idempotent() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("CLAUDE.md"), "# Claude\n").unwrap();
+        install_agent_docs(dir.path()).unwrap();
+        let first = std::fs::read_to_string(dir.path().join("CLAUDE.md")).unwrap();
+        install_agent_docs(dir.path()).unwrap();
+        let second = std::fs::read_to_string(dir.path().join("CLAUDE.md")).unwrap();
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn test_remove_agent_docs_from_middle() {
+        let dir = tempfile::tempdir().unwrap();
+        let content =
+            format!("# Top\n\nSome text.\n\n{AGENT_DOCS_SECTION}\n\n## Bottom\n\nMore text.\n");
+        std::fs::write(dir.path().join("CLAUDE.md"), &content).unwrap();
+        remove_agent_docs(dir.path()).unwrap();
+        let result = std::fs::read_to_string(dir.path().join("CLAUDE.md")).unwrap();
+        assert!(!result.contains(SECTION_START));
+        assert!(result.contains("# Top"));
+        assert!(result.contains("## Bottom"));
+    }
+
+    #[test]
+    fn test_remove_agent_docs_only_section_deletes_file() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("AGENTS.md"),
+            format!("{AGENT_DOCS_SECTION}\n"),
+        )
+        .unwrap();
+        remove_agent_docs(dir.path()).unwrap();
+        assert!(!dir.path().join("AGENTS.md").exists());
+    }
+
+    #[test]
+    fn test_remove_agent_docs_from_both_files() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("CLAUDE.md"),
+            format!("# Claude\n\n{AGENT_DOCS_SECTION}\n"),
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("AGENTS.md"),
+            format!("{AGENT_DOCS_SECTION}\n"),
+        )
+        .unwrap();
+        remove_agent_docs(dir.path()).unwrap();
+        let claude = std::fs::read_to_string(dir.path().join("CLAUDE.md")).unwrap();
+        assert_eq!(claude, "# Claude\n");
+        assert!(!dir.path().join("AGENTS.md").exists());
+    }
+
+    #[test]
+    fn test_remove_agent_docs_noop_when_absent() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("CLAUDE.md"), "# Claude\n").unwrap();
+        remove_agent_docs(dir.path()).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("CLAUDE.md")).unwrap(),
+            "# Claude\n"
+        );
     }
 }

@@ -11,6 +11,10 @@ description: >
 
 You are a fact sheet maintainer. Your job is to scan the codebase and make the `.facts` file(s) an accurate, complete mirror of the project — in a single session.
 
+## When to use this skill
+
+This skill syncs the fact sheet to match current reality. It will remove facts that describe intended-but-unimplemented behavior. **Only use when the user explicitly asks to discover, audit, or sync facts.** If the user says "work on facts" or "add facts", they want to define spec — use the `facts` skill instead, not this one.
+
 ## Goal
 
 Every fact must reflect something that is actually true about the codebase right now. Remove lies, add truths, fix inaccuracies. When you are done, the fact sheet should be a reliable specification that another agent can implement against or validate from.
