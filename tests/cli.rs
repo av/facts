@@ -2078,7 +2078,7 @@ fn add_rejects_dotdot_file_path() {
         .args(["add", "test", "--file", "../escape.facts"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("file path must be within the project root"));
+        .stderr(predicate::str::contains("file must be in the project root"));
 }
 
 #[test]
@@ -2659,6 +2659,42 @@ fn add_accepts_unique_id_across_files() {
 }
 
 // ===========================================================================
+// ISSUE-027: add --file rejects subdirectory paths
+// ===========================================================================
+
+#[test]
+fn add_rejects_file_in_subdirectory() {
+    let dir = empty_project();
+    facts_cmd(&dir)
+        .args(["add", "test", "--file", "subdir/nested"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("file must be in the project root"));
+}
+
+#[test]
+fn add_rejects_file_with_backslash_subdirectory() {
+    let dir = empty_project();
+    facts_cmd(&dir)
+        .args(["add", "test", "--file", "subdir\\nested"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("file must be in the project root"));
+}
+
+#[test]
+fn add_accepts_file_in_project_root() {
+    let dir = empty_project();
+    facts_cmd(&dir)
+        .args(["add", "test", "--file", "extra"])
+        .assert()
+        .success();
+
+    let content = fs::read_to_string(dir.path().join("extra.facts")).unwrap();
+    assert!(content.contains("test"));
+}
+
+// ===========================================================================
 // ISSUE-024: lint must detect duplicate explicit IDs across files
 // ===========================================================================
 
@@ -2707,4 +2743,73 @@ fn lint_passes_unique_ids_across_files() {
         .assert()
         .success()
         .stdout(predicate::str::contains("2 files passed"));
+}
+
+// ===========================================================================
+// add — tag validation (parentheses)
+// ===========================================================================
+
+#[test]
+fn add_rejects_tag_with_parentheses() {
+    let dir = project("- existing fact\n");
+
+    facts_cmd(&dir)
+        .args(["add", "test fact", "--tags", "v(beta)"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("cannot contain parentheses"));
+}
+
+#[test]
+fn add_rejects_tag_with_closing_paren() {
+    let dir = project("- existing fact\n");
+
+    facts_cmd(&dir)
+        .args(["add", "test fact", "--tags", "beta)"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("cannot contain parentheses"));
+}
+
+// ===========================================================================
+// init — .facts directory collision (ISSUE-028)
+// ===========================================================================
+
+#[test]
+fn init_errors_when_facts_is_directory() {
+    let dir = empty_project();
+    // Create a directory named `.facts` instead of a file
+    fs::create_dir(dir.path().join(".facts")).unwrap();
+
+    facts_cmd(&dir)
+        .arg("init")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(".facts exists but is not a file"));
+}
+
+// ===========================================================================
+// lint — empty label detection (ISSUE-029)
+// ===========================================================================
+
+#[test]
+fn lint_warns_empty_label() {
+    let dir = project("- \n");
+
+    facts_cmd(&dir)
+        .arg("lint")
+        .assert()
+        .success() // warnings don't cause failure
+        .stderr(predicate::str::contains("empty label"));
+}
+
+#[test]
+fn lint_passes_nonempty_labels() {
+    let dir = project("- a real fact\n- another fact\n");
+
+    facts_cmd(&dir)
+        .arg("lint")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("1 file passed"));
 }

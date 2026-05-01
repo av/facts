@@ -66,6 +66,12 @@ fn run_in(opts: &AddOptions, root: &Path) -> Result<()> {
         anyhow::bail!("file path must be relative, not absolute");
     }
 
+    // Reject subdirectory paths — discover_fact_files only scans the project root,
+    // so files in subdirectories would be invisible to list/check/lint.
+    if filename.contains('/') || filename.contains('\\') {
+        anyhow::bail!("file must be in the project root (no subdirectory paths)");
+    }
+
     // Ensure filename ends with .facts
     let filename = if filename.ends_with(".facts") {
         filename.to_string()
@@ -249,6 +255,9 @@ pub fn parse_tags(tags_str: &str) -> Result<Vec<String>> {
     for tag in &tags {
         if tag.contains(char::is_whitespace) {
             anyhow::bail!("tag '{}' cannot contain whitespace", tag);
+        }
+        if tag.contains('(') || tag.contains(')') {
+            anyhow::bail!("tag '{}' cannot contain parentheses", tag);
         }
     }
     Ok(tags)
@@ -488,6 +497,21 @@ mod tests {
         let err = parse_tags("ok,has space,also_ok").unwrap_err();
         assert!(
             err.to_string().contains("'has space'"),
+            "error should name the bad tag: {err}"
+        );
+    }
+
+    #[test]
+    fn test_parse_tags_rejects_parentheses() {
+        let err = parse_tags("v(beta)").unwrap_err();
+        assert!(
+            err.to_string().contains("cannot contain parentheses"),
+            "unexpected error: {err}"
+        );
+
+        let err = parse_tags("ok,v(beta),also_ok").unwrap_err();
+        assert!(
+            err.to_string().contains("'v(beta)'"),
             "error should name the bad tag: {err}"
         );
     }
