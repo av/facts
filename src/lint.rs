@@ -137,6 +137,9 @@ fn resolve_files(root: &Path, opts: &LintOptions) -> Result<Vec<PathBuf>> {
 pub fn lint_content(content: &str, filename: &str) -> Vec<LintDiagnostic> {
     let mut diagnostics = Vec::new();
 
+    // Strip UTF-8 BOM if present so downstream checks see clean content.
+    let content = content.strip_prefix('\u{FEFF}').unwrap_or(content);
+
     // Check for CRLF line endings before any other checks.
     check_crlf(content, filename, &mut diagnostics);
 

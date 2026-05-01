@@ -2813,3 +2813,29 @@ fn lint_passes_nonempty_labels() {
         .success()
         .stdout(predicate::str::contains("1 file passed"));
 }
+
+// ===========================================================================
+// UTF-8 BOM handling
+// ===========================================================================
+
+#[test]
+fn parse_handles_utf8_bom() {
+    let dir = TempDir::new().unwrap();
+    fs::create_dir(dir.path().join(".git")).unwrap();
+    // Write raw bytes: UTF-8 BOM (EF BB BF) followed by a fact
+    fs::write(dir.path().join(".facts"), b"\xEF\xBB\xBF- a fact\n").unwrap();
+
+    // list should show the fact
+    facts_cmd(&dir)
+        .arg("list")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("a fact"));
+
+    // lint should pass
+    facts_cmd(&dir)
+        .arg("lint")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("1 file passed"));
+}

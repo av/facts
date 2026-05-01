@@ -8,6 +8,8 @@ use crate::model::{Fact, FactSheet, Section};
 
 /// Parse a .facts file from its content and filename.
 pub fn parse(content: &str, filename: &str) -> Result<FactSheet> {
+    // Strip UTF-8 BOM if present (editors like Notepad may prepend it).
+    let content = content.strip_prefix('\u{FEFF}').unwrap_or(content);
     let lines: Vec<&str> = content.lines().collect();
     let blocks = split_into_blocks(&lines);
 
@@ -516,5 +518,14 @@ mod tests {
         assert_eq!(format.children.len(), 1);
         assert_eq!(format.children[0].title, "file");
         assert_eq!(format.children[0].facts.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_strips_utf8_bom() {
+        let content = "\u{FEFF}- a fact with BOM\n";
+        let sheet = parse(content, ".facts").unwrap();
+        assert_eq!(sheet.preamble.len(), 1);
+        assert_eq!(sheet.preamble[0].label, "a fact with BOM");
+        assert!(sheet.preamble[0].is_plain);
     }
 }
