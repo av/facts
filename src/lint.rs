@@ -155,6 +155,7 @@ pub fn lint_content(content: &str, filename: &str) -> Vec<LintDiagnostic> {
     check_unknown_continuation_lines(content, filename, &mut diagnostics);
     check_duplicate_mapping_keys(content, filename, &mut diagnostics);
     check_empty_mapping_values(content, filename, &mut diagnostics);
+    check_double_at_tags(content, filename, &mut diagnostics);
 
     // Also try parsing; if the parser catches something our line-level
     // checks didn't, report that too. If parsing succeeds, run model-level
@@ -633,6 +634,43 @@ fn check_empty_mapping_values(
     }
 }
 
+/// Check for `@@tag` patterns in fact lines.
+///
+/// Double-@ tags like `@@important` are accepted by the parser (the leading
+/// `@` characters are stripped), but they almost certainly indicate a typo.
+/// Warn so the user can fix the source to use a single `@`.
+fn check_double_at_tags(content: &str, filename: &str, diagnostics: &mut Vec<LintDiagnostic>) {
+    for (i, line) in content.lines().enumerate() {
+        let line_num = i + 1;
+        let trimmed = line.trim();
+
+        // Only check fact lines (plain or label values)
+        let text = if let Some(rest) = trimmed.strip_prefix("- ") {
+            rest
+        } else if let Some(rest) = trimmed.strip_prefix("label: ") {
+            rest
+        } else {
+            continue;
+        };
+
+        for word in text.split_whitespace() {
+            if word.starts_with("@@") {
+                let tag = word.trim_start_matches('@');
+                if !tag.is_empty() {
+                    diagnostics.push(LintDiagnostic {
+                        file: filename.to_string(),
+                        line: Some(line_num),
+                        message: format!(
+                            "double-@ tag '@@{tag}' should be '@{tag}'"
+                        ),
+                        severity: Severity::Warning,
+                    });
+                }
+            }
+        }
+    }
+}
+
 /// A group of lines forming a single fact.
 struct FactLineGroup<'a> {
     lines: Vec<&'a str>,
@@ -936,5 +974,22 @@ mod tests {
         let content = "- {this is a note}\n";
         let diags = lint_content(content, ".facts");
         assert!(diags.is_empty(), "expected no diagnostics for curly brace plain fact, got: {diags:?}");
+    }
+
+    #[test]
+    fn test_lint_warns_double_at_tag() {
+        let content = "- a fact @@important\n";
+        let diags = lint_content(content, ".facts");
+        let warnings: Vec<_> = diags.iter().filter(|d| d.severity == Severity::Warning).collect();
+        assert_eq!(warnings.len(), 1, "expected 1 warning for double-@ tag, got: {diags:?}");
+        assert!(warnings[0].message.contains("@@important"));
+        assert!(warnings[0].message.contains("@important"));
+    }
+
+    #[test]
+    fn test_lint_passes_single_at_tag() {
+        let content = "- a fact @important\n";
+        let diags = lint_content(content, ".facts");
+        assert!(diags.is_empty(), "expected no diagnostics for single-@ tag, got: {diags:?}");
     }
 }

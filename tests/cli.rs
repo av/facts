@@ -2994,3 +2994,38 @@ fn lint_warns_empty_mapping_value() {
         .success()
         .stderr(predicate::str::contains("key 'command' has no value"));
 }
+
+// ===========================================================================
+// ISSUE-037: @@tag creates tag with @ prefix
+// ===========================================================================
+
+#[test]
+fn double_at_tag_stripped_to_single() {
+    let dir = empty_project();
+    facts_cmd(&dir)
+        .args(["add", "fact @@important"])
+        .assert()
+        .success();
+
+    let content = fs::read_to_string(dir.path().join(".facts")).unwrap();
+    // The tag should be stored as @important (single @), not @@important
+    assert!(
+        content.contains("@important"),
+        "should contain @important, got:\n{content}"
+    );
+    assert!(
+        !content.contains("@@important"),
+        "should NOT contain @@important, got:\n{content}"
+    );
+}
+
+#[test]
+fn list_filters_double_at_tag() {
+    let dir = project("- fact @@important\n");
+    // The parser should strip the extra @ so --tags "important" matches
+    facts_cmd(&dir)
+        .args(["list", "--tags", "important"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("fact"));
+}

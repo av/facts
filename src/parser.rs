@@ -322,6 +322,7 @@ pub fn extract_inline_tags(s: &str) -> (String, Vec<String>) {
 
     for word in s.split_whitespace() {
         if let Some(tag) = word.strip_prefix('@') {
+            let tag = tag.trim_start_matches('@');
             if !tag.is_empty() {
                 tags.push(tag.to_string());
             }
@@ -392,6 +393,13 @@ mod tests {
         let (label, tags) = extract_inline_tags("some fact @mvp @core");
         assert_eq!(label, "some fact");
         assert_eq!(tags, vec!["mvp", "core"]);
+    }
+
+    #[test]
+    fn test_extract_double_at_tag() {
+        let (label, tags) = extract_inline_tags("some fact @@important");
+        assert_eq!(label, "some fact");
+        assert_eq!(tags, vec!["important"]);
     }
 
     #[test]
