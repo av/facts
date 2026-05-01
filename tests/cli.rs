@@ -2839,3 +2839,33 @@ fn parse_handles_utf8_bom() {
         .success()
         .stdout(predicate::str::contains("1 file passed"));
 }
+
+// ===========================================================================
+// lint: unrecognized continuation lines (ISSUE-033)
+// ===========================================================================
+
+#[test]
+fn lint_warns_unknown_continuation_line() {
+    let dir = project("- label: test fact\n  this content is silently dropped\n  command: echo hi\n");
+    // Unrecognized continuation is a warning, not an error -- should still pass (exit 0)
+    facts_cmd(&dir)
+        .arg("lint")
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("unrecognized continuation line"));
+}
+
+// ===========================================================================
+// lint: duplicate mapping keys (ISSUE-034)
+// ===========================================================================
+
+#[test]
+fn lint_warns_duplicate_mapping_keys() {
+    let dir = project("- label: first label\n  label: second label\n");
+    // Duplicate keys is a warning, not an error -- should still pass (exit 0)
+    facts_cmd(&dir)
+        .arg("lint")
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("duplicate key"));
+}

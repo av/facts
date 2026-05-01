@@ -6,6 +6,8 @@
 /// - Invalid mapping keys (only id, label, command, tags are allowed)
 /// - Mixed inline + mapping tags on the same fact
 /// - Unparseable YAML in section bodies
+/// - Unrecognized continuation lines in mapping facts
+/// - Duplicate mapping keys within a single fact
 
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
@@ -150,6 +152,8 @@ pub fn lint_content(content: &str, filename: &str) -> Vec<LintDiagnostic> {
     check_invalid_keys(content, filename, &mut diagnostics);
     check_mixed_tags(content, filename, &mut diagnostics);
     check_bare_tags(content, filename, &mut diagnostics);
+    check_unknown_continuation_lines(content, filename, &mut diagnostics);
+    check_duplicate_mapping_keys(content, filename, &mut diagnostics);
 
     // Also try parsing; if the parser catches something our line-level
     // checks didn't, report that too. If parsing succeeds, run model-level
@@ -465,6 +469,133 @@ fn check_line_structure(content: &str, filename: &str, diagnostics: &mut Vec<Lin
     }
 }
 
+/// Check for continuation lines that don't match any known mapping key.
+///
+/// In a mapping fact (multi-line), every continuation line should start with
+/// one of the known keys (`label:`, `command:`, `id:`, `tags:`). A line
+/// that doesn't match is silently dropped by the parser. Warn so the user
+/// can fix the file.
+fn check_unknown_continuation_lines(
+    content: &str,
+    filename: &str,
+    diagnostics: &mut Vec<LintDiagnostic>,
+) {
+    let lines: Vec<&str> = content.lines().collect();
+    let fact_groups = group_fact_lines(&lines);
+    let known_prefixes = ["label:", "command:", "id:", "tags:"];
+
+    for group in fact_groups {
+        // Only check multi-line facts (mapping facts)
+        if group.lines.len() < 2 {
+            continue;
+        }
+
+        // Check if first line looks like a mapping (starts with a known key after `- `)
+        let first = group.lines[0]
+            .strip_prefix("- ")
+            .unwrap_or(group.lines[0]);
+        let is_mapping = known_prefixes.iter().any(|p| first.starts_with(p));
+        if !is_mapping {
+            continue;
+        }
+
+        // Check each continuation line
+        for (offset, line) in group.lines[1..].iter().enumerate() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let is_known = known_prefixes.iter().any(|p| trimmed.starts_with(p));
+            if !is_known {
+                // Also skip lines that look like unknown `key: value` pairs --
+                // those are already caught by check_invalid_keys.
+                if let Some(colon_pos) = trimmed.find(": ") {
+                    let key = &trimmed[..colon_pos];
+                    if !key.contains(' ') && !key.is_empty() {
+                        continue; // handled by check_invalid_keys
+                    }
+                }
+                diagnostics.push(LintDiagnostic {
+                    file: filename.to_string(),
+                    line: Some(group.start_line + offset + 1),
+                    message: format!(
+                        "unrecognized continuation line in mapping fact: {}",
+                        trimmed
+                    ),
+                    severity: Severity::Warning,
+                });
+            }
+        }
+    }
+}
+
+/// Check for duplicate mapping keys within a single fact.
+///
+/// When a key like `label:` appears more than once in the same mapping fact,
+/// the parser silently keeps the last value. Warn so the user can fix it.
+fn check_duplicate_mapping_keys(
+    content: &str,
+    filename: &str,
+    diagnostics: &mut Vec<LintDiagnostic>,
+) {
+    let lines: Vec<&str> = content.lines().collect();
+    let fact_groups = group_fact_lines(&lines);
+    let known_prefixes = ["label:", "command:", "id:", "tags:"];
+
+    for group in fact_groups {
+        // Only check multi-line facts (mapping facts)
+        if group.lines.len() < 2 {
+            continue;
+        }
+
+        // Collect all lines (first line stripped of `- `, plus continuations)
+        let first = group.lines[0]
+            .strip_prefix("- ")
+            .unwrap_or(group.lines[0]);
+        let is_mapping = known_prefixes.iter().any(|p| first.starts_with(p));
+        if !is_mapping {
+            continue;
+        }
+
+        let mut seen_keys: HashMap<&str, usize> = HashMap::new();
+
+        // Check the first line
+        for prefix in &known_prefixes {
+            if first.starts_with(prefix) {
+                *seen_keys.entry(prefix).or_insert(0) += 1;
+                break;
+            }
+        }
+
+        // Check continuation lines
+        for line in &group.lines[1..] {
+            let trimmed = line.trim();
+            for prefix in &known_prefixes {
+                if trimmed.starts_with(prefix) {
+                    *seen_keys.entry(prefix).or_insert(0) += 1;
+                    break;
+                }
+            }
+        }
+
+        // Warn about any key that appears more than once
+        for (key, count) in &seen_keys {
+            if *count > 1 {
+                let key_name = key.trim_end_matches(':');
+                diagnostics.push(LintDiagnostic {
+                    file: filename.to_string(),
+                    line: Some(group.start_line),
+                    message: format!(
+                        "duplicate key '{}' in mapping fact (appears {} times)",
+                        key_name, count
+                    ),
+                    severity: Severity::Warning,
+                });
+            }
+        }
+    }
+}
+
 /// A group of lines forming a single fact.
 struct FactLineGroup<'a> {
     lines: Vec<&'a str>,
@@ -698,5 +829,39 @@ mod tests {
         let content = "- a real fact\n- another fact\n";
         let diags = lint_content(content, ".facts");
         assert!(diags.is_empty(), "expected no diagnostics, got: {diags:?}");
+    }
+
+    #[test]
+    fn test_lint_warns_unknown_continuation_line() {
+        let content = "- label: test fact\n  this content is silently dropped\n  command: echo hi\n";
+        let diags = lint_content(content, ".facts");
+        let warnings: Vec<_> = diags.iter().filter(|d| d.severity == Severity::Warning).collect();
+        assert_eq!(warnings.len(), 1, "expected 1 warning for unknown continuation, got: {diags:?}");
+        assert!(warnings[0].message.contains("unrecognized continuation line"));
+        assert!(warnings[0].message.contains("this content is silently dropped"));
+    }
+
+    #[test]
+    fn test_lint_passes_valid_mapping_continuation() {
+        let content = "- label: test fact\n  command: echo hi\n  tags: [core]\n  id: abc\n";
+        let diags = lint_content(content, ".facts");
+        assert!(diags.is_empty(), "expected no diagnostics for valid mapping, got: {diags:?}");
+    }
+
+    #[test]
+    fn test_lint_warns_duplicate_mapping_keys() {
+        let content = "- label: first label\n  label: second label\n";
+        let diags = lint_content(content, ".facts");
+        let warnings: Vec<_> = diags.iter().filter(|d| d.severity == Severity::Warning).collect();
+        assert_eq!(warnings.len(), 1, "expected 1 warning for duplicate key, got: {diags:?}");
+        assert!(warnings[0].message.contains("duplicate key 'label'"));
+        assert!(warnings[0].message.contains("2 times"));
+    }
+
+    #[test]
+    fn test_lint_passes_unique_mapping_keys() {
+        let content = "- label: a fact\n  command: echo hi\n  id: xyz\n  tags: [core]\n";
+        let diags = lint_content(content, ".facts");
+        assert!(diags.is_empty(), "expected no diagnostics for unique keys, got: {diags:?}");
     }
 }
