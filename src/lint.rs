@@ -154,6 +154,7 @@ pub fn lint_content(content: &str, filename: &str) -> Vec<LintDiagnostic> {
     check_bare_tags(content, filename, &mut diagnostics);
     check_unknown_continuation_lines(content, filename, &mut diagnostics);
     check_duplicate_mapping_keys(content, filename, &mut diagnostics);
+    check_empty_mapping_values(content, filename, &mut diagnostics);
 
     // Also try parsing; if the parser catches something our line-level
     // checks didn't, report that too. If parsing succeeds, run model-level
@@ -596,6 +597,42 @@ fn check_duplicate_mapping_keys(
     }
 }
 
+/// Check for mapping keys with no value.
+///
+/// Lines like `command:` or `command:   ` (key followed by colon and optional
+/// whitespace but no actual value) are silently ignored by the parser because
+/// it looks for `strip_prefix("command: ")` which requires a space and a value.
+/// Warn so the user can either provide a value or remove the key.
+fn check_empty_mapping_values(
+    content: &str,
+    filename: &str,
+    diagnostics: &mut Vec<LintDiagnostic>,
+) {
+    let lines: Vec<&str> = content.lines().collect();
+    let fact_groups = group_fact_lines(&lines);
+    let known_keys = ["label", "command", "id", "tags"];
+
+    for group in fact_groups {
+        for (offset, line) in group.lines.iter().enumerate() {
+            let trimmed = line.trim();
+            let stripped = trimmed.strip_prefix("- ").unwrap_or(trimmed);
+
+            for key in &known_keys {
+                let key_colon = format!("{key}:");
+                if stripped == key_colon || (stripped.starts_with(&key_colon) && stripped[key_colon.len()..].trim().is_empty()) {
+                    diagnostics.push(LintDiagnostic {
+                        file: filename.to_string(),
+                        line: Some(group.start_line + offset),
+                        message: format!("key '{key}' has no value"),
+                        severity: Severity::Warning,
+                    });
+                    break;
+                }
+            }
+        }
+    }
+}
+
 /// A group of lines forming a single fact.
 struct FactLineGroup<'a> {
     lines: Vec<&'a str>,
@@ -636,8 +673,15 @@ fn is_mapping_like(content: &str) -> bool {
             return true;
         }
     }
+    // Only treat {…} as a mapping if the braced content contains a known key.
+    // A line like `{this is just a note}` is a plain fact, not a mapping.
     if content.starts_with('{') && content.ends_with('}') {
-        return true;
+        let inner = &content[1..content.len() - 1];
+        for key in &known_keys {
+            if inner.trim_start().starts_with(key) {
+                return true;
+            }
+        }
     }
     false
 }
@@ -863,5 +907,34 @@ mod tests {
         let content = "- label: a fact\n  command: echo hi\n  id: xyz\n  tags: [core]\n";
         let diags = lint_content(content, ".facts");
         assert!(diags.is_empty(), "expected no diagnostics for unique keys, got: {diags:?}");
+    }
+
+    #[test]
+    fn test_lint_warns_empty_mapping_value_command() {
+        let content = "- label: test\n  command:\n";
+        let diags = lint_content(content, ".facts");
+        let warnings: Vec<_> = diags.iter().filter(|d| d.severity == Severity::Warning).collect();
+        assert!(
+            warnings.iter().any(|w| w.message.contains("key 'command' has no value")),
+            "expected warning for empty command value, got: {diags:?}"
+        );
+    }
+
+    #[test]
+    fn test_lint_warns_empty_mapping_value_with_trailing_spaces() {
+        let content = "- label: test\n  command:   \n";
+        let diags = lint_content(content, ".facts");
+        let warnings: Vec<_> = diags.iter().filter(|d| d.severity == Severity::Warning).collect();
+        assert!(
+            warnings.iter().any(|w| w.message.contains("key 'command' has no value")),
+            "expected warning for empty command value with trailing spaces, got: {diags:?}"
+        );
+    }
+
+    #[test]
+    fn test_lint_passes_curly_brace_plain_fact() {
+        let content = "- {this is a note}\n";
+        let diags = lint_content(content, ".facts");
+        assert!(diags.is_empty(), "expected no diagnostics for curly brace plain fact, got: {diags:?}");
     }
 }

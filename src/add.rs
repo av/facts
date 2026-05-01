@@ -270,6 +270,9 @@ pub fn parse_tags(tags_str: &str) -> Result<Vec<String>> {
         if tag.contains('(') || tag.contains(')') {
             anyhow::bail!("tag '{}' cannot contain parentheses", tag);
         }
+        if tag == "not" || tag == "and" || tag == "or" {
+            anyhow::bail!("tag name conflicts with filter operator: {}", tag);
+        }
     }
     Ok(tags)
 }
@@ -524,6 +527,23 @@ mod tests {
         assert!(
             err.to_string().contains("'v(beta)'"),
             "error should name the bad tag: {err}"
+        );
+    }
+
+    #[test]
+    fn test_parse_tags_rejects_operator_names() {
+        for op in &["not", "and", "or"] {
+            let err = parse_tags(op).unwrap_err();
+            assert!(
+                err.to_string().contains("conflicts with filter operator"),
+                "expected operator conflict error for '{op}', got: {err}"
+            );
+        }
+        // Mixed with valid tags — the operator tag is still rejected.
+        let err = parse_tags("ok,not,also_ok").unwrap_err();
+        assert!(
+            err.to_string().contains("not"),
+            "error should mention the bad tag: {err}"
         );
     }
 

@@ -226,9 +226,16 @@ fn is_single_line_mapping(content: &str) -> bool {
             return true;
         }
     }
-    // Also check for {key: val, ...} YAML inline mapping syntax
+    // Also check for {key: val, ...} YAML inline mapping syntax, but only
+    // if the braced content actually contains a known mapping key.
+    // A line like `{this is just a note}` should be treated as a plain fact.
     if content.starts_with('{') && content.ends_with('}') {
-        return true;
+        let inner = &content[1..content.len() - 1];
+        for key in &known_keys {
+            if inner.trim_start().starts_with(key) {
+                return true;
+            }
+        }
     }
     false
 }
@@ -527,5 +534,31 @@ mod tests {
         assert_eq!(sheet.preamble.len(), 1);
         assert_eq!(sheet.preamble[0].label, "a fact with BOM");
         assert!(sheet.preamble[0].is_plain);
+    }
+
+    #[test]
+    fn test_parse_curly_braces_plain_fact() {
+        // A plain fact wrapped in {} should NOT be treated as a mapping.
+        let content = "- {this is just a note}\n";
+        let sheet = parse(content, ".facts").unwrap();
+        assert_eq!(sheet.preamble.len(), 1);
+        assert_eq!(sheet.preamble[0].label, "{this is just a note}");
+        assert!(sheet.preamble[0].is_plain);
+    }
+
+    #[test]
+    fn test_is_single_line_mapping_known_key_in_braces() {
+        // {label: ...} contains a known key so is_single_line_mapping returns true.
+        // (parse_mapping_fact doesn't actually handle the braces, but the
+        // classifier correctly identifies it as mapping-like syntax.)
+        assert!(is_single_line_mapping("{label: foo}"));
+        assert!(is_single_line_mapping("{command: echo hi}"));
+    }
+
+    #[test]
+    fn test_is_single_line_mapping_unknown_content_in_braces() {
+        // {this is just text} should NOT be classified as a mapping.
+        assert!(!is_single_line_mapping("{this is just a note}"));
+        assert!(!is_single_line_mapping("{hello world}"));
     }
 }

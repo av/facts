@@ -2919,3 +2919,78 @@ fn edit_add_tag_deduplicates_inline() {
     let count = content.matches("@mvp").count();
     assert_eq!(count, 1, "expected exactly 1 @mvp, got {count} in: {content}");
 }
+
+// ===========================================================================
+// add — reject operator-named tags (ISSUE-032)
+// ===========================================================================
+
+#[test]
+fn add_rejects_tag_named_not() {
+    let dir = project("- existing fact\n");
+
+    facts_cmd(&dir)
+        .args(["add", "test fact", "--tags", "not"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("tag name conflicts with filter operator: not"));
+}
+
+#[test]
+fn add_rejects_tag_named_and() {
+    let dir = project("- existing fact\n");
+
+    facts_cmd(&dir)
+        .args(["add", "test fact", "--tags", "and"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("tag name conflicts with filter operator: and"));
+}
+
+#[test]
+fn add_rejects_tag_named_or() {
+    let dir = project("- existing fact\n");
+
+    facts_cmd(&dir)
+        .args(["add", "test fact", "--tags", "or"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("tag name conflicts with filter operator: or"));
+}
+
+// ===========================================================================
+// ISSUE-035: Plain fact label wrapped in {} causes parse failure
+// ===========================================================================
+
+#[test]
+fn plain_fact_with_curly_braces() {
+    let dir = project("- {this is a note}\n");
+
+    // lint should pass (no errors or warnings)
+    facts_cmd(&dir)
+        .arg("lint")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("passed"));
+
+    // list should show it as a fact
+    facts_cmd(&dir)
+        .arg("list")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("{this is a note}"));
+}
+
+// ===========================================================================
+// ISSUE-036: Mapping keys with no value silently ignored
+// ===========================================================================
+
+#[test]
+fn lint_warns_empty_mapping_value() {
+    let dir = project("- label: test\n  command:\n");
+
+    facts_cmd(&dir)
+        .arg("lint")
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("key 'command' has no value"));
+}
