@@ -1,10 +1,9 @@
 ---
 name: facts
 description: >
-  Install and use the facts CLI — read, write, check, and edit .facts files.
-  Use when .facts files exist in the project, when the user mentions fact
-  sheets or the facts CLI, when facts needs to be installed, or when working
-  with fact-driven development workflows like discovering or implementing facts.
+  Manage .facts files — atomic, validatable truth statements about a project.
+  Install, check, list, add, edit, remove, and lint facts via the CLI.
+  ALWAYS read this skill when the user mentions facts in any capacity.
 ---
 
 # facts

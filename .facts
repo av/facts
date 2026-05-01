@@ -316,3 +316,7 @@
 - reports remaining work and blockers if it cannot complete everything
 - label: source is in ./skills/facts-implement/
   command: test -f skills/facts-implement/SKILL.md
+
+# distribution
+- label: local install via cargo install --path . copies the binary to ~/.local/bin/
+  command: test -f ~/.local/bin/facts
