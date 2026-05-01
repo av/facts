@@ -141,12 +141,23 @@ fn run_in(opts: &AddOptions, root: &Path) -> Result<()> {
     let needs_mapping = opts.command.is_some() || opts.id.is_some();
     let is_plain = !needs_mapping;
 
+    // Extract inline tags from the label so they live in one place (the tags vec).
+    let (clean_label, inline_tags) = parser::extract_inline_tags(&opts.label);
+
+    // Merge inline tags with --tags, deduplicating (order-preserving).
+    let mut combined_tags = inline_tags;
+    for t in &opts.tags {
+        if !combined_tags.contains(t) {
+            combined_tags.push(t.clone());
+        }
+    }
+
     // Build the new fact
     let mut fact = Fact {
         explicit_id: opts.id.clone(),
-        label: opts.label.clone(),
+        label: clean_label,
         command: opts.command.clone(),
-        tags: opts.tags.clone(),
+        tags: combined_tags,
         is_plain,
         raw: String::new(),
         blank_lines_before: 0,

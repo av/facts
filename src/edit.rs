@@ -148,7 +148,14 @@ fn apply_edits(fact: &mut Fact, opts: &EditOptions) {
     let original_explicit_id = fact.explicit_id.clone();
 
     if let Some(ref new_label) = opts.label {
-        fact.label = new_label.clone();
+        // Extract inline tags from the new label so they merge into fact.tags.
+        let (clean_label, inline_tags) = crate::parser::extract_inline_tags(new_label);
+        fact.label = clean_label;
+        for t in inline_tags {
+            if !fact.tags.contains(&t) {
+                fact.tags.push(t);
+            }
+        }
     }
 
     if let Some(ref new_command) = opts.command {

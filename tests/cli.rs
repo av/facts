@@ -2869,3 +2869,53 @@ fn lint_warns_duplicate_mapping_keys() {
         .success()
         .stderr(predicate::str::contains("duplicate key"));
 }
+
+// ===========================================================================
+// ISSUE-031: inline @tag + --tags deduplication
+// ===========================================================================
+
+#[test]
+fn add_deduplicates_inline_and_flag_tags() {
+    let dir = empty_project();
+
+    facts_cmd(&dir)
+        .args(["add", "fact @mvp here", "--tags", "mvp"])
+        .assert()
+        .success();
+
+    let content = fs::read_to_string(dir.path().join(".facts")).unwrap();
+    // The tag should appear exactly once -- not duplicated.
+    assert!(
+        content.contains("@mvp"),
+        "file should contain @mvp: {content}"
+    );
+    // Count occurrences of "@mvp" -- must be exactly 1.
+    let count = content.matches("@mvp").count();
+    assert_eq!(count, 1, "expected exactly 1 @mvp, got {count} in: {content}");
+}
+
+#[test]
+fn edit_add_tag_deduplicates_inline() {
+    // Start with a plain fact that has an inline tag.
+    let dir = project("- some fact @mvp\n");
+
+    let list_output = facts_cmd(&dir).arg("list").output().unwrap();
+    let stdout = String::from_utf8_lossy(&list_output.stdout);
+    let id = stdout
+        .lines()
+        .find(|l| l.contains("some fact"))
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap();
+
+    // Add the same tag via --add-tag -- should NOT produce a duplicate.
+    facts_cmd(&dir)
+        .args(["edit", id, "--add-tag", "mvp"])
+        .assert()
+        .success();
+
+    let content = fs::read_to_string(dir.path().join(".facts")).unwrap();
+    let count = content.matches("@mvp").count();
+    assert_eq!(count, 1, "expected exactly 1 @mvp, got {count} in: {content}");
+}
