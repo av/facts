@@ -1,5 +1,4 @@
 /// The `remove` subcommand — remove a fact by ID.
-
 use std::path::Path;
 
 use anyhow::{Context, Result};
@@ -20,7 +19,6 @@ pub fn run(target_id: &str) -> Result<()> {
 
 /// Run the remove subcommand in a given root directory.
 pub fn run_in(target_id: &str, root: &Path) -> Result<()> {
-    // Acquire advisory lock to prevent concurrent modifications.
     let _lock = FileLock::acquire(root)?;
 
     let files = project::discover_fact_files(root)?;
@@ -29,7 +27,6 @@ pub fn run_in(target_id: &str, root: &Path) -> Result<()> {
         anyhow::bail!("no .facts files found in {}", root.display());
     }
 
-    // Parse all sheets
     let mut sheets: Vec<(std::path::PathBuf, FactSheet)> = Vec::new();
     for path in &files {
         let content = std::fs::read_to_string(path)
@@ -43,7 +40,6 @@ pub fn run_in(target_id: &str, root: &Path) -> Result<()> {
         sheets.push((path.clone(), sheet));
     }
 
-    // Collect all fact labels for ID assignment
     let mut all_fact_labels: Vec<(String, Option<String>)> = Vec::new();
     let mut fact_locations: Vec<(usize, FactLocation)> = Vec::new();
 
@@ -63,7 +59,6 @@ pub fn run_in(target_id: &str, root: &Path) -> Result<()> {
 
     let assigned_ids = id::assign_ids(&all_fact_labels);
 
-    // Find the fact matching the target ID
     let match_idx = assigned_ids
         .iter()
         .position(|id| id == target_id)
@@ -72,13 +67,9 @@ pub fn run_in(target_id: &str, root: &Path) -> Result<()> {
     let (sheet_idx, ref location) = fact_locations[match_idx];
     let (ref file_path, ref mut sheet) = sheets[sheet_idx];
 
-    // Get the fact for output before removing it
     let removed_label = locate::get_fact(sheet, location).label.clone();
-
-    // Remove the fact
     remove_fact(sheet, location);
 
-    // Write back
     let output = writer::write(sheet);
     if output.trim().is_empty() {
         std::fs::write(file_path, "")
@@ -88,7 +79,6 @@ pub fn run_in(target_id: &str, root: &Path) -> Result<()> {
             .with_context(|| format!("failed to write {}", file_path.display()))?;
     }
 
-    // Print the removed fact (only after successful write)
     println!("{removed_label}");
 
     Ok(())
@@ -105,7 +95,6 @@ fn remove_fact(sheet: &mut FactSheet, location: &FactLocation) {
                 let section = locate::navigate_to_section_mut(&mut sheet.sections, path);
                 section.facts.remove(*fact_idx);
             }
-            // Clean up empty sections (from leaf to root)
             cleanup_empty_sections(&mut sheet.sections, path);
         }
     }
@@ -113,12 +102,10 @@ fn remove_fact(sheet: &mut FactSheet, location: &FactLocation) {
 
 /// Remove sections that have no facts and no children, walking from leaf to root.
 fn cleanup_empty_sections(sections: &mut Vec<Section>, path: &[usize]) {
-    // Check from the deepest level upward
     for depth in (0..path.len()).rev() {
         let current_path = &path[..=depth];
         let section = locate::navigate_to_section(sections, current_path);
         if section.facts.is_empty() && section.children.is_empty() {
-            // Remove this section from its parent
             if depth == 0 {
                 sections.remove(current_path[0]);
             } else {
@@ -127,7 +114,6 @@ fn cleanup_empty_sections(sections: &mut Vec<Section>, path: &[usize]) {
                 parent.children.remove(current_path[depth]);
             }
         } else {
-            // Parent has other content, stop cleaning
             break;
         }
     }
@@ -145,7 +131,6 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let facts_path = dir.path().join(".facts");
         fs::write(&facts_path, content).unwrap();
-        // Create a .git directory so project root detection works
         fs::create_dir(dir.path().join(".git")).unwrap();
         (dir, facts_path)
     }

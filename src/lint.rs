@@ -8,7 +8,6 @@
 /// - Unparseable YAML in section bodies
 /// - Unrecognized continuation lines in mapping facts
 /// - Duplicate mapping keys within a single fact
-
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 
@@ -71,14 +70,10 @@ pub fn run(opts: &LintOptions) -> Result<bool> {
     if all_diagnostics.is_empty() {
         let count = files.len();
         let plural = if count == 1 { "" } else { "s" };
-        println!(
-            "{}",
-            color::green(&format!("{count} file{plural} passed"))
-        );
+        println!("{}", color::green(&format!("{count} file{plural} passed")));
         return Ok(true);
     }
 
-    // Print diagnostics
     for diag in &all_diagnostics {
         let severity_str = match diag.severity {
             Severity::Error => color::red("error"),
@@ -89,7 +84,12 @@ pub fn run(opts: &LintOptions) -> Result<bool> {
         } else {
             diag.file.clone()
         };
-        eprintln!("{}: {}: {}", color::bold(&location), severity_str, diag.message);
+        eprintln!(
+            "{}: {}: {}",
+            color::bold(&location),
+            severity_str,
+            diag.message
+        );
     }
 
     let error_count = all_diagnostics
@@ -118,7 +118,6 @@ pub fn run(opts: &LintOptions) -> Result<bool> {
     }
     eprintln!("\n{}", summary_parts.join(", "));
 
-    // Errors cause non-zero exit; warnings alone still pass
     Ok(error_count == 0)
 }
 
@@ -139,14 +138,11 @@ fn resolve_files(root: &Path, opts: &LintOptions) -> Result<Vec<PathBuf>> {
 pub fn lint_content(content: &str, filename: &str) -> Vec<LintDiagnostic> {
     let mut diagnostics = Vec::new();
 
-    // Strip UTF-8 BOM if present so downstream checks see clean content.
     let content = content.strip_prefix('\u{FEFF}').unwrap_or(content);
 
-    // Check for CRLF line endings before any other checks.
     check_crlf(content, filename, &mut diagnostics);
 
-    // Run all structural checks directly on the raw content.
-    // These work independently of the parser so they catch issues even
+    // Structural checks run on raw content so they catch issues even
     // if the parser would bail on the same content.
     check_line_structure(content, filename, &mut diagnostics);
     check_invalid_keys(content, filename, &mut diagnostics);
@@ -208,7 +204,6 @@ fn check_mixed_tags(content: &str, filename: &str, diagnostics: &mut Vec<LintDia
         let mut has_inline_tags = false;
         let mut has_mapping_tags = false;
 
-        // Check the label line for inline tags
         for line in &group.lines {
             let trimmed = line.trim();
             if trimmed.starts_with("- label: ") || trimmed.starts_with("label: ") {
@@ -217,9 +212,8 @@ fn check_mixed_tags(content: &str, filename: &str, diagnostics: &mut Vec<LintDia
                 } else if let Some(v) = trimmed.strip_prefix("label: ") {
                     v
                 } else {
-                    continue
+                    continue;
                 };
-                // Check for @word tokens in label value
                 for word in val.split_whitespace() {
                     if word.starts_with('@') && word.len() > 1 {
                         has_inline_tags = true;
@@ -259,14 +253,11 @@ fn check_bare_tags(content: &str, filename: &str, diagnostics: &mut Vec<LintDiag
 
             if let Some(val) = stripped.strip_prefix("tags: ") {
                 let val = val.trim();
-                if !val.is_empty() && !(val.starts_with('[') && val.ends_with(']')) {
+                if !(val.is_empty() || val.starts_with('[') && val.ends_with(']')) {
                     diagnostics.push(LintDiagnostic {
                         file: filename.to_string(),
                         line: Some(group.start_line + offset),
-                        message: format!(
-                            "tags should use bracket syntax: tags: [{}]",
-                            val
-                        ),
+                        message: format!("tags should use bracket syntax: tags: [{}]", val),
                         severity: Severity::Warning,
                     });
                 }
@@ -291,9 +282,7 @@ fn check_duplicate_ids(sheet: &FactSheet, filename: &str, diagnostics: &mut Vec<
             diagnostics.push(LintDiagnostic {
                 file: filename.to_string(),
                 line: None,
-                message: format!(
-                    "duplicate explicit id '{id}' appears {count} times"
-                ),
+                message: format!("duplicate explicit id '{id}' appears {count} times"),
                 severity: Severity::Warning,
             });
         }
@@ -325,7 +314,6 @@ fn check_cross_file_duplicate_ids(
     files: &[PathBuf],
     diagnostics: &mut Vec<LintDiagnostic>,
 ) -> Result<()> {
-    // Map from ID -> list of filenames where it appears
     let mut id_to_files: HashMap<String, Vec<String>> = HashMap::new();
 
     for path in files {
@@ -350,8 +338,6 @@ fn check_cross_file_duplicate_ids(
     }
 
     for (id, file_list) in &id_to_files {
-        // Deduplicate file names (an ID might appear multiple times in the
-        // same file, but that's caught by the per-file check).
         let mut unique_files: Vec<&str> = file_list.iter().map(|s| s.as_str()).collect();
         unique_files.sort();
         unique_files.dedup();
@@ -379,9 +365,7 @@ fn check_invalid_keys(content: &str, filename: &str, diagnostics: &mut Vec<LintD
     let known_keys = ["label", "command", "id", "tags"];
 
     for group in fact_groups {
-        // Only check multi-line facts (mappings)
         if group.lines.len() < 2 {
-            // Also check single-line mapping-style facts
             let line = group.lines[0];
             let content_part = line.strip_prefix("- ").unwrap_or(line);
             if is_mapping_like(content_part) {
@@ -396,11 +380,9 @@ fn check_invalid_keys(content: &str, filename: &str, diagnostics: &mut Vec<LintD
             continue;
         }
 
-        // First line: strip "- " prefix
         let first = group.lines[0].strip_prefix("- ").unwrap_or(group.lines[0]);
         check_keys_in_line(first, &known_keys, filename, group.start_line, diagnostics);
 
-        // Continuation lines
         for (offset, line) in group.lines[1..].iter().enumerate() {
             let trimmed = line.trim();
             check_keys_in_line(
@@ -424,12 +406,13 @@ fn check_keys_in_line(
 ) {
     if let Some(colon_pos) = line.find(": ") {
         let key = &line[..colon_pos];
-        // Only flag if the key looks like a simple identifier (no spaces)
         if !key.contains(' ') && !key.is_empty() && !known_keys.contains(&key) {
             diagnostics.push(LintDiagnostic {
                 file: filename.to_string(),
                 line: Some(line_num),
-                message: format!("unknown key '{key}' in fact mapping (allowed: id, label, command, tags)"),
+                message: format!(
+                    "unknown key '{key}' in fact mapping (allowed: id, label, command, tags)"
+                ),
                 severity: Severity::Error,
             });
         }
@@ -441,31 +424,25 @@ fn check_line_structure(content: &str, filename: &str, diagnostics: &mut Vec<Lin
     for (i, line) in content.lines().enumerate() {
         let line_num = i + 1;
 
-        // Blank lines are fine
         if line.trim().is_empty() {
             continue;
         }
-
-        // Headings are fine
         if line.trim_start().starts_with('#') {
             continue;
         }
-
-        // Fact start (- prefixed)
         if line.starts_with("- ") || line == "-" {
             continue;
         }
-
-        // Continuation of a mapping (indented)
         if line.starts_with("  ") {
             continue;
         }
-
-        // Anything else is a structural error
         diagnostics.push(LintDiagnostic {
             file: filename.to_string(),
             line: Some(line_num),
-            message: format!("unexpected line (not a heading, fact, or blank): {}", line.trim()),
+            message: format!(
+                "unexpected line (not a heading, fact, or blank): {}",
+                line.trim()
+            ),
             severity: Severity::Error,
         });
     }
@@ -487,21 +464,16 @@ fn check_unknown_continuation_lines(
     let known_prefixes = ["label:", "command:", "id:", "tags:"];
 
     for group in fact_groups {
-        // Only check multi-line facts (mapping facts)
         if group.lines.len() < 2 {
             continue;
         }
 
-        // Check if first line looks like a mapping (starts with a known key after `- `)
-        let first = group.lines[0]
-            .strip_prefix("- ")
-            .unwrap_or(group.lines[0]);
+        let first = group.lines[0].strip_prefix("- ").unwrap_or(group.lines[0]);
         let is_mapping = known_prefixes.iter().any(|p| first.starts_with(p));
         if !is_mapping {
             continue;
         }
 
-        // Check each continuation line
         for (offset, line) in group.lines[1..].iter().enumerate() {
             let trimmed = line.trim();
             if trimmed.is_empty() {
@@ -509,12 +481,10 @@ fn check_unknown_continuation_lines(
             }
             let is_known = known_prefixes.iter().any(|p| trimmed.starts_with(p));
             if !is_known {
-                // Also skip lines that look like unknown `key: value` pairs --
-                // those are already caught by check_invalid_keys.
                 if let Some(colon_pos) = trimmed.find(": ") {
                     let key = &trimmed[..colon_pos];
                     if !key.contains(' ') && !key.is_empty() {
-                        continue; // handled by check_invalid_keys
+                        continue;
                     }
                 }
                 diagnostics.push(LintDiagnostic {
@@ -545,15 +515,11 @@ fn check_duplicate_mapping_keys(
     let known_prefixes = ["label:", "command:", "id:", "tags:"];
 
     for group in fact_groups {
-        // Only check multi-line facts (mapping facts)
         if group.lines.len() < 2 {
             continue;
         }
 
-        // Collect all lines (first line stripped of `- `, plus continuations)
-        let first = group.lines[0]
-            .strip_prefix("- ")
-            .unwrap_or(group.lines[0]);
+        let first = group.lines[0].strip_prefix("- ").unwrap_or(group.lines[0]);
         let is_mapping = known_prefixes.iter().any(|p| first.starts_with(p));
         if !is_mapping {
             continue;
@@ -561,7 +527,6 @@ fn check_duplicate_mapping_keys(
 
         let mut seen_keys: HashMap<&str, usize> = HashMap::new();
 
-        // Check the first line
         for prefix in &known_prefixes {
             if first.starts_with(prefix) {
                 *seen_keys.entry(prefix).or_insert(0) += 1;
@@ -569,7 +534,6 @@ fn check_duplicate_mapping_keys(
             }
         }
 
-        // Check continuation lines
         for line in &group.lines[1..] {
             let trimmed = line.trim();
             for prefix in &known_prefixes {
@@ -580,7 +544,6 @@ fn check_duplicate_mapping_keys(
             }
         }
 
-        // Warn about any key that appears more than once
         for (key, count) in &seen_keys {
             if *count > 1 {
                 let key_name = key.trim_end_matches(':');
@@ -620,7 +583,10 @@ fn check_empty_mapping_values(
 
             for key in &known_keys {
                 let key_colon = format!("{key}:");
-                if stripped == key_colon || (stripped.starts_with(&key_colon) && stripped[key_colon.len()..].trim().is_empty()) {
+                if stripped == key_colon
+                    || (stripped.starts_with(&key_colon)
+                        && stripped[key_colon.len()..].trim().is_empty())
+                {
                     diagnostics.push(LintDiagnostic {
                         file: filename.to_string(),
                         line: Some(group.start_line + offset),
@@ -644,7 +610,6 @@ fn check_double_at_tags(content: &str, filename: &str, diagnostics: &mut Vec<Lin
         let line_num = i + 1;
         let trimmed = line.trim();
 
-        // Only check fact lines (plain or label values)
         let text = if let Some(rest) = trimmed.strip_prefix("- ") {
             rest
         } else if let Some(rest) = trimmed.strip_prefix("label: ") {
@@ -660,9 +625,7 @@ fn check_double_at_tags(content: &str, filename: &str, diagnostics: &mut Vec<Lin
                     diagnostics.push(LintDiagnostic {
                         file: filename.to_string(),
                         line: Some(line_num),
-                        message: format!(
-                            "double-@ tag '@@{tag}' should be '@{tag}'"
-                        ),
+                        message: format!("double-@ tag '@@{tag}' should be '@{tag}'"),
                         severity: Severity::Warning,
                     });
                 }
@@ -684,7 +647,6 @@ fn group_fact_lines<'a>(lines: &[&'a str]) -> Vec<FactLineGroup<'a>> {
     for (i, line) in lines.iter().enumerate() {
         let line_num = i + 1;
 
-        // Skip blank lines and headings
         if line.trim().is_empty() || line.trim_start().starts_with('#') {
             continue;
         }
@@ -695,7 +657,6 @@ fn group_fact_lines<'a>(lines: &[&'a str]) -> Vec<FactLineGroup<'a>> {
                 start_line: line_num,
             });
         } else if line.starts_with("  ") && !groups.is_empty() {
-            // Continuation of the previous fact
             groups.last_mut().unwrap().lines.push(line);
         }
     }
@@ -772,7 +733,10 @@ mod tests {
     fn test_lint_catches_invalid_key() {
         let content = "- label: a fact\n  priority: high\n";
         let diags = lint_content(content, ".facts");
-        let errors: Vec<_> = diags.iter().filter(|d| d.severity == Severity::Error).collect();
+        let errors: Vec<_> = diags
+            .iter()
+            .filter(|d| d.severity == Severity::Error)
+            .collect();
         assert!(!errors.is_empty(), "expected error for unknown key");
         assert!(errors[0].message.contains("unknown key 'priority'"));
     }
@@ -781,7 +745,10 @@ mod tests {
     fn test_lint_catches_unexpected_line() {
         let content = "# title\n\nthis is not a fact\n- a real fact\n";
         let diags = lint_content(content, ".facts");
-        let errors: Vec<_> = diags.iter().filter(|d| d.severity == Severity::Error).collect();
+        let errors: Vec<_> = diags
+            .iter()
+            .filter(|d| d.severity == Severity::Error)
+            .collect();
         assert!(!errors.is_empty(), "expected error for unexpected line");
         assert!(errors[0].message.contains("unexpected line"));
     }
@@ -800,15 +767,19 @@ mod tests {
 
     #[test]
     fn test_lint_real_facts_file() {
-        // The project's own .facts file should pass lint
         let content = std::fs::read_to_string(
             std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(".facts"),
         )
         .unwrap();
         let diags = lint_content(&content, ".facts");
-        // Filter to only errors (the .facts spec uses "both can coexist" so no warnings expected either)
-        let errors: Vec<_> = diags.iter().filter(|d| d.severity == Severity::Error).collect();
-        assert!(errors.is_empty(), "expected no errors on project .facts, got: {errors:?}");
+        let errors: Vec<_> = diags
+            .iter()
+            .filter(|d| d.severity == Severity::Error)
+            .collect();
+        assert!(
+            errors.is_empty(),
+            "expected no errors on project .facts, got: {errors:?}"
+        );
     }
 
     #[test]
@@ -826,7 +797,10 @@ mod tests {
   status: active
 ";
         let diags = lint_content(content, ".facts");
-        let errors: Vec<_> = diags.iter().filter(|d| d.severity == Severity::Error).collect();
+        let errors: Vec<_> = diags
+            .iter()
+            .filter(|d| d.severity == Severity::Error)
+            .collect();
         assert_eq!(errors.len(), 2, "expected 2 errors for 2 unknown keys");
     }
 
@@ -839,7 +813,10 @@ mod tests {
   id: dupe
 ";
         let diags = lint_content(content, ".facts");
-        let warnings: Vec<_> = diags.iter().filter(|d| d.severity == Severity::Warning).collect();
+        let warnings: Vec<_> = diags
+            .iter()
+            .filter(|d| d.severity == Severity::Warning)
+            .collect();
         assert_eq!(warnings.len(), 1, "expected 1 warning for duplicate id");
         assert!(warnings[0].message.contains("duplicate"));
         assert!(warnings[0].message.contains("dupe"));
@@ -854,7 +831,10 @@ mod tests {
   id: beta
 ";
         let diags = lint_content(content, ".facts");
-        assert!(diags.is_empty(), "expected no diagnostics for unique ids, got: {diags:?}");
+        assert!(
+            diags.is_empty(),
+            "expected no diagnostics for unique ids, got: {diags:?}"
+        );
     }
 
     #[test]
@@ -866,7 +846,11 @@ mod tests {
             .filter(|d| d.severity == Severity::Warning)
             .collect();
         assert_eq!(warnings.len(), 1, "expected 1 warning for bare tags");
-        assert!(warnings[0].message.contains("tags should use bracket syntax"));
+        assert!(
+            warnings[0]
+                .message
+                .contains("tags should use bracket syntax")
+        );
         assert!(warnings[0].message.contains("[mvp, core]"));
     }
 
@@ -894,15 +878,25 @@ mod tests {
     fn test_check_crlf_passes_on_lf() {
         let mut diagnostics = Vec::new();
         check_crlf("- a fact\n- another\n", ".facts", &mut diagnostics);
-        assert!(diagnostics.is_empty(), "expected no CRLF warning for LF content");
+        assert!(
+            diagnostics.is_empty(),
+            "expected no CRLF warning for LF content"
+        );
     }
 
     #[test]
     fn test_lint_warns_empty_label() {
         let content = "- \n";
         let diags = lint_content(content, ".facts");
-        let warnings: Vec<_> = diags.iter().filter(|d| d.severity == Severity::Warning).collect();
-        assert_eq!(warnings.len(), 1, "expected 1 warning for empty label, got: {diags:?}");
+        let warnings: Vec<_> = diags
+            .iter()
+            .filter(|d| d.severity == Severity::Warning)
+            .collect();
+        assert_eq!(
+            warnings.len(),
+            1,
+            "expected 1 warning for empty label, got: {diags:?}"
+        );
         assert!(warnings[0].message.contains("empty label"));
     }
 
@@ -915,27 +909,53 @@ mod tests {
 
     #[test]
     fn test_lint_warns_unknown_continuation_line() {
-        let content = "- label: test fact\n  this content is silently dropped\n  command: echo hi\n";
+        let content =
+            "- label: test fact\n  this content is silently dropped\n  command: echo hi\n";
         let diags = lint_content(content, ".facts");
-        let warnings: Vec<_> = diags.iter().filter(|d| d.severity == Severity::Warning).collect();
-        assert_eq!(warnings.len(), 1, "expected 1 warning for unknown continuation, got: {diags:?}");
-        assert!(warnings[0].message.contains("unrecognized continuation line"));
-        assert!(warnings[0].message.contains("this content is silently dropped"));
+        let warnings: Vec<_> = diags
+            .iter()
+            .filter(|d| d.severity == Severity::Warning)
+            .collect();
+        assert_eq!(
+            warnings.len(),
+            1,
+            "expected 1 warning for unknown continuation, got: {diags:?}"
+        );
+        assert!(
+            warnings[0]
+                .message
+                .contains("unrecognized continuation line")
+        );
+        assert!(
+            warnings[0]
+                .message
+                .contains("this content is silently dropped")
+        );
     }
 
     #[test]
     fn test_lint_passes_valid_mapping_continuation() {
         let content = "- label: test fact\n  command: echo hi\n  tags: [core]\n  id: abc\n";
         let diags = lint_content(content, ".facts");
-        assert!(diags.is_empty(), "expected no diagnostics for valid mapping, got: {diags:?}");
+        assert!(
+            diags.is_empty(),
+            "expected no diagnostics for valid mapping, got: {diags:?}"
+        );
     }
 
     #[test]
     fn test_lint_warns_duplicate_mapping_keys() {
         let content = "- label: first label\n  label: second label\n";
         let diags = lint_content(content, ".facts");
-        let warnings: Vec<_> = diags.iter().filter(|d| d.severity == Severity::Warning).collect();
-        assert_eq!(warnings.len(), 1, "expected 1 warning for duplicate key, got: {diags:?}");
+        let warnings: Vec<_> = diags
+            .iter()
+            .filter(|d| d.severity == Severity::Warning)
+            .collect();
+        assert_eq!(
+            warnings.len(),
+            1,
+            "expected 1 warning for duplicate key, got: {diags:?}"
+        );
         assert!(warnings[0].message.contains("duplicate key 'label'"));
         assert!(warnings[0].message.contains("2 times"));
     }
@@ -944,16 +964,24 @@ mod tests {
     fn test_lint_passes_unique_mapping_keys() {
         let content = "- label: a fact\n  command: echo hi\n  id: xyz\n  tags: [core]\n";
         let diags = lint_content(content, ".facts");
-        assert!(diags.is_empty(), "expected no diagnostics for unique keys, got: {diags:?}");
+        assert!(
+            diags.is_empty(),
+            "expected no diagnostics for unique keys, got: {diags:?}"
+        );
     }
 
     #[test]
     fn test_lint_warns_empty_mapping_value_command() {
         let content = "- label: test\n  command:\n";
         let diags = lint_content(content, ".facts");
-        let warnings: Vec<_> = diags.iter().filter(|d| d.severity == Severity::Warning).collect();
+        let warnings: Vec<_> = diags
+            .iter()
+            .filter(|d| d.severity == Severity::Warning)
+            .collect();
         assert!(
-            warnings.iter().any(|w| w.message.contains("key 'command' has no value")),
+            warnings
+                .iter()
+                .any(|w| w.message.contains("key 'command' has no value")),
             "expected warning for empty command value, got: {diags:?}"
         );
     }
@@ -962,9 +990,14 @@ mod tests {
     fn test_lint_warns_empty_mapping_value_with_trailing_spaces() {
         let content = "- label: test\n  command:   \n";
         let diags = lint_content(content, ".facts");
-        let warnings: Vec<_> = diags.iter().filter(|d| d.severity == Severity::Warning).collect();
+        let warnings: Vec<_> = diags
+            .iter()
+            .filter(|d| d.severity == Severity::Warning)
+            .collect();
         assert!(
-            warnings.iter().any(|w| w.message.contains("key 'command' has no value")),
+            warnings
+                .iter()
+                .any(|w| w.message.contains("key 'command' has no value")),
             "expected warning for empty command value with trailing spaces, got: {diags:?}"
         );
     }
@@ -973,15 +1006,25 @@ mod tests {
     fn test_lint_passes_curly_brace_plain_fact() {
         let content = "- {this is a note}\n";
         let diags = lint_content(content, ".facts");
-        assert!(diags.is_empty(), "expected no diagnostics for curly brace plain fact, got: {diags:?}");
+        assert!(
+            diags.is_empty(),
+            "expected no diagnostics for curly brace plain fact, got: {diags:?}"
+        );
     }
 
     #[test]
     fn test_lint_warns_double_at_tag() {
         let content = "- a fact @@important\n";
         let diags = lint_content(content, ".facts");
-        let warnings: Vec<_> = diags.iter().filter(|d| d.severity == Severity::Warning).collect();
-        assert_eq!(warnings.len(), 1, "expected 1 warning for double-@ tag, got: {diags:?}");
+        let warnings: Vec<_> = diags
+            .iter()
+            .filter(|d| d.severity == Severity::Warning)
+            .collect();
+        assert_eq!(
+            warnings.len(),
+            1,
+            "expected 1 warning for double-@ tag, got: {diags:?}"
+        );
         assert!(warnings[0].message.contains("@@important"));
         assert!(warnings[0].message.contains("@important"));
     }
@@ -990,6 +1033,9 @@ mod tests {
     fn test_lint_passes_single_at_tag() {
         let content = "- a fact @important\n";
         let diags = lint_content(content, ".facts");
-        assert!(diags.is_empty(), "expected no diagnostics for single-@ tag, got: {diags:?}");
+        assert!(
+            diags.is_empty(),
+            "expected no diagnostics for single-@ tag, got: {diags:?}"
+        );
     }
 }

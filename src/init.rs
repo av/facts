@@ -8,7 +8,6 @@
 /// is detected on the system, symlinks are created from `.claude/skills/`.
 ///
 /// Idempotent: skips steps that are already done.
-
 use anyhow::Result;
 use std::path::Path;
 
@@ -114,10 +113,10 @@ fn is_claude_available(root: &Path) -> bool {
     if root.join(".claude").exists() {
         return true;
     }
-    if let Ok(home) = std::env::var("HOME") {
-        if Path::new(&home).join(".claude").exists() {
-            return true;
-        }
+    if let Ok(home) = std::env::var("HOME")
+        && Path::new(&home).join(".claude").exists()
+    {
+        return true;
     }
     std::process::Command::new("which")
         .arg("claude")
@@ -133,7 +132,11 @@ fn link_skill_for_claude(root: &Path, name: &str) -> Result<()> {
     let link_dir = root.join(".claude").join("skills");
     let link_path = link_dir.join(name);
     // Relative from .claude/skills/ up to project root, then into .agents/skills/<name>
-    let target = Path::new("..").join("..").join(".agents").join("skills").join(name);
+    let target = Path::new("..")
+        .join("..")
+        .join(".agents")
+        .join("skills")
+        .join(name);
 
     if link_path.is_symlink() {
         let current = std::fs::read_link(&link_path)?;
@@ -371,9 +374,7 @@ fn detect_python_pyproject(root: &Path, pyproject: &str) -> DetectedStack {
                 &runner.cmd("ruff format --check ."),
             ));
         }
-    } else if toml_has_section(pyproject, "tool.flake8")
-        || dep_in_pyproject(pyproject, "flake8")
-    {
+    } else if toml_has_section(pyproject, "tool.flake8") || dep_in_pyproject(pyproject, "flake8") {
         facts.push(sfact("code passes linting", &runner.cmd("flake8")));
     }
 
@@ -394,10 +395,7 @@ fn detect_python_pyproject(root: &Path, pyproject: &str) -> DetectedStack {
     if !toml_has_section(pyproject, "tool.ruff.format")
         && (toml_has_section(pyproject, "tool.black") || dep_in_pyproject(pyproject, "black"))
     {
-        facts.push(sfact(
-            "code is formatted",
-            &runner.cmd("black --check ."),
-        ));
+        facts.push(sfact("code is formatted", &runner.cmd("black --check .")));
     }
 
     if facts.is_empty() {
@@ -649,7 +647,7 @@ fn detect_dart(root: &Path) -> Option<DetectedStack> {
     }
 
     let is_flutter = file_exists(root, "lib/main.dart")
-        || read_file(root, "pubspec.yaml").map_or(false, |c| c.contains("flutter:"));
+        || read_file(root, "pubspec.yaml").is_some_and(|c| c.contains("flutter:"));
 
     if is_flutter {
         Some(DetectedStack {
@@ -971,7 +969,11 @@ mod tests {
     #[test]
     fn test_detect_cargo() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("Cargo.toml"), "[package]\nname = \"test\"\n").unwrap();
+        std::fs::write(
+            dir.path().join("Cargo.toml"),
+            "[package]\nname = \"test\"\n",
+        )
+        .unwrap();
 
         let stacks = detect_stacks(dir.path());
         assert_eq!(stacks.len(), 1);
@@ -982,7 +984,11 @@ mod tests {
     #[test]
     fn test_detect_cargo_with_clippy() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("Cargo.toml"), "[package]\nname = \"test\"\n").unwrap();
+        std::fs::write(
+            dir.path().join("Cargo.toml"),
+            "[package]\nname = \"test\"\n",
+        )
+        .unwrap();
         std::fs::write(dir.path().join("clippy.toml"), "").unwrap();
 
         let stacks = detect_stacks(dir.path());
@@ -1013,14 +1019,18 @@ mod tests {
         assert_eq!(stacks.len(), 1);
         assert_eq!(stacks[0].name, "Node.js");
         assert!(stacks[0].facts.iter().any(|f| f.label == "all tests pass"));
-        assert!(stacks[0]
-            .facts
-            .iter()
-            .any(|f| f.label == "code passes linting"));
-        assert!(stacks[0]
-            .facts
-            .iter()
-            .any(|f| f.label == "project builds successfully"));
+        assert!(
+            stacks[0]
+                .facts
+                .iter()
+                .any(|f| f.label == "code passes linting")
+        );
+        assert!(
+            stacks[0]
+                .facts
+                .iter()
+                .any(|f| f.label == "project builds successfully")
+        );
     }
 
     #[test]
@@ -1253,14 +1263,18 @@ mod tests {
         let stacks = detect_stacks(dir.path());
         assert_eq!(stacks.len(), 1);
         assert!(stacks[0].facts.iter().any(|f| f.label == "all tests pass"));
-        assert!(stacks[0]
-            .facts
-            .iter()
-            .any(|f| f.label == "code passes linting"));
-        assert!(stacks[0]
-            .facts
-            .iter()
-            .any(|f| f.label == "type checking passes"));
+        assert!(
+            stacks[0]
+                .facts
+                .iter()
+                .any(|f| f.label == "code passes linting")
+        );
+        assert!(
+            stacks[0]
+                .facts
+                .iter()
+                .any(|f| f.label == "type checking passes")
+        );
     }
 
     #[test]
@@ -1274,14 +1288,18 @@ mod tests {
 
         let stacks = detect_stacks(dir.path());
         assert!(stacks[0].facts.iter().any(|f| f.label == "all tests pass"));
-        assert!(stacks[0]
-            .facts
-            .iter()
-            .any(|f| f.label == "code passes linting"));
-        assert!(stacks[0]
-            .facts
-            .iter()
-            .any(|f| f.label == "type checking passes"));
+        assert!(
+            stacks[0]
+                .facts
+                .iter()
+                .any(|f| f.label == "code passes linting")
+        );
+        assert!(
+            stacks[0]
+                .facts
+                .iter()
+                .any(|f| f.label == "type checking passes")
+        );
     }
 
     #[test]
@@ -1300,11 +1318,13 @@ mod tests {
             .iter()
             .find(|f| f.label == "all tests pass")
             .unwrap();
-        assert!(test_fact
-            .command
-            .as_deref()
-            .unwrap()
-            .starts_with("poetry run"));
+        assert!(
+            test_fact
+                .command
+                .as_deref()
+                .unwrap()
+                .starts_with("poetry run")
+        );
     }
 
     #[test]
@@ -1323,11 +1343,7 @@ mod tests {
             .iter()
             .find(|f| f.label == "all tests pass")
             .unwrap();
-        assert!(test_fact
-            .command
-            .as_deref()
-            .unwrap()
-            .starts_with("uv run"));
+        assert!(test_fact.command.as_deref().unwrap().starts_with("uv run"));
     }
 
     #[test]
@@ -1351,14 +1367,18 @@ mod tests {
 
         let stacks = detect_stacks(dir.path());
         assert!(stacks[0].facts.iter().any(|f| f.label == "all tests pass"));
-        assert!(stacks[0]
-            .facts
-            .iter()
-            .any(|f| f.label == "code passes linting"));
-        assert!(stacks[0]
-            .facts
-            .iter()
-            .any(|f| f.label == "code is formatted"));
+        assert!(
+            stacks[0]
+                .facts
+                .iter()
+                .any(|f| f.label == "code passes linting")
+        );
+        assert!(
+            stacks[0]
+                .facts
+                .iter()
+                .any(|f| f.label == "code is formatted")
+        );
     }
 
     #[test]
@@ -1389,16 +1409,17 @@ mod tests {
         std::fs::write(dir.path().join(".golangci.yml"), "").unwrap();
 
         let stacks = detect_stacks(dir.path());
-        assert!(stacks[0]
-            .facts
-            .iter()
-            .any(|f| f.label == "linter passes"));
+        assert!(stacks[0].facts.iter().any(|f| f.label == "linter passes"));
     }
 
     #[test]
     fn test_detect_ruby() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("Gemfile"), "source 'https://rubygems.org'\n").unwrap();
+        std::fs::write(
+            dir.path().join("Gemfile"),
+            "source 'https://rubygems.org'\n",
+        )
+        .unwrap();
 
         let stacks = detect_stacks(dir.path());
         assert_eq!(stacks.len(), 1);
@@ -1413,12 +1434,16 @@ mod tests {
         std::fs::write(dir.path().join(".rubocop.yml"), "").unwrap();
 
         let stacks = detect_stacks(dir.path());
-        assert!(stacks[0].facts.iter().any(|f| f.label == "all tests pass"
-            && f.command.as_deref() == Some("bundle exec rspec")));
-        assert!(stacks[0]
-            .facts
-            .iter()
-            .any(|f| f.label == "code passes linting"));
+        assert!(
+            stacks[0].facts.iter().any(|f| f.label == "all tests pass"
+                && f.command.as_deref() == Some("bundle exec rspec"))
+        );
+        assert!(
+            stacks[0]
+                .facts
+                .iter()
+                .any(|f| f.label == "code passes linting")
+        );
     }
 
     #[test]
@@ -1588,10 +1613,7 @@ mod tests {
         assert_eq!(content, "- existing fact\n");
 
         // Skills still installed
-        assert!(dir
-            .path()
-            .join(".agents/skills/facts/SKILL.md")
-            .exists());
+        assert!(dir.path().join(".agents/skills/facts/SKILL.md").exists());
     }
 
     #[test]
@@ -1607,18 +1629,17 @@ mod tests {
         let content = std::fs::read_to_string(dir.path().join(".facts")).unwrap();
         assert!(content.contains("cargo"));
 
-        assert!(dir
-            .path()
-            .join(".agents/skills/facts/SKILL.md")
-            .exists());
-        assert!(dir
-            .path()
-            .join(".agents/skills/facts-discover/SKILL.md")
-            .exists());
-        assert!(dir
-            .path()
-            .join(".agents/skills/facts-implement/SKILL.md")
-            .exists());
+        assert!(dir.path().join(".agents/skills/facts/SKILL.md").exists());
+        assert!(
+            dir.path()
+                .join(".agents/skills/facts-discover/SKILL.md")
+                .exists()
+        );
+        assert!(
+            dir.path()
+                .join(".agents/skills/facts-implement/SKILL.md")
+                .exists()
+        );
     }
 
     #[test]
@@ -1642,10 +1663,7 @@ mod tests {
 
         let path = dir.path().join(".agents/skills/test-skill/SKILL.md");
         assert!(path.exists());
-        assert_eq!(
-            std::fs::read_to_string(&path).unwrap(),
-            "# skill content"
-        );
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "# skill content");
     }
 
     #[test]

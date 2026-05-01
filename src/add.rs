@@ -1,5 +1,4 @@
 /// The `add` subcommand — append a fact to a file and section.
-
 use std::path::Path;
 
 use anyhow::{Context, Result};
@@ -39,24 +38,21 @@ fn run_in(opts: &AddOptions, root: &Path) -> Result<()> {
         anyhow::bail!("label cannot contain newlines");
     }
 
-    // Reject empty labels (including labels that become empty after stripping inline tags).
     let (stripped_label, _) = parser::extract_inline_tags(&opts.label);
     if stripped_label.trim().is_empty() {
         anyhow::bail!("label cannot be empty");
     }
 
-    // Reject empty or whitespace-only command strings.
-    if let Some(ref cmd) = opts.command {
-        if cmd.trim().is_empty() {
-            anyhow::bail!("command cannot be empty");
-        }
+    if let Some(ref cmd) = opts.command
+        && cmd.trim().is_empty()
+    {
+        anyhow::bail!("command cannot be empty");
     }
 
-    // Reject empty or whitespace-only explicit IDs.
-    if let Some(ref id) = opts.id {
-        if id.trim().is_empty() {
-            anyhow::bail!("ID cannot be empty");
-        }
+    if let Some(ref id) = opts.id
+        && id.trim().is_empty()
+    {
+        anyhow::bail!("ID cannot be empty");
     }
 
     let filename = opts.file.as_deref().unwrap_or(".facts");
@@ -72,7 +68,6 @@ fn run_in(opts: &AddOptions, root: &Path) -> Result<()> {
         anyhow::bail!("file must be in the project root (no subdirectory paths)");
     }
 
-    // Ensure filename ends with .facts
     let filename = if filename.ends_with(".facts") {
         filename.to_string()
     } else {
@@ -87,17 +82,17 @@ fn run_in(opts: &AddOptions, root: &Path) -> Result<()> {
         file_path.canonicalize()?
     } else {
         let parent = file_path.parent().unwrap_or(root);
-        let canon_parent = parent.canonicalize().unwrap_or_else(|_| parent.to_path_buf());
+        let canon_parent = parent
+            .canonicalize()
+            .unwrap_or_else(|_| parent.to_path_buf());
         canon_parent.join(file_path.file_name().unwrap())
     };
     if !check_path.starts_with(&canonical_root) {
         anyhow::bail!("file path must be within the project root");
     }
 
-    // Acquire advisory lock to prevent concurrent modifications.
     let _lock = FileLock::acquire(root)?;
 
-    // Reject duplicate explicit IDs across ALL .facts files.
     if let Some(ref id) = opts.id {
         let all_files = project::discover_fact_files(root)?;
         for path in &all_files {
@@ -122,7 +117,6 @@ fn run_in(opts: &AddOptions, root: &Path) -> Result<()> {
         }
     }
 
-    // Parse existing file or create empty sheet
     let mut sheet = if file_path.exists() {
         let content = std::fs::read_to_string(&file_path)
             .with_context(|| format!("failed to read {}", file_path.display()))?;
@@ -135,16 +129,12 @@ fn run_in(opts: &AddOptions, root: &Path) -> Result<()> {
         }
     };
 
-    // Determine if this should be a plain string or mapping fact.
     // Tags alone do NOT promote to mapping — they go inline as @tag.
-    // Only command or explicit id require a mapping.
     let needs_mapping = opts.command.is_some() || opts.id.is_some();
     let is_plain = !needs_mapping;
 
-    // Extract inline tags from the label so they live in one place (the tags vec).
     let (clean_label, inline_tags) = parser::extract_inline_tags(&opts.label);
 
-    // Merge inline tags with --tags, deduplicating (order-preserving).
     let mut combined_tags = inline_tags;
     for t in &opts.tags {
         if !combined_tags.contains(t) {
@@ -152,7 +142,6 @@ fn run_in(opts: &AddOptions, root: &Path) -> Result<()> {
         }
     }
 
-    // Build the new fact
     let mut fact = Fact {
         explicit_id: opts.id.clone(),
         label: clean_label,
@@ -163,18 +152,14 @@ fn run_in(opts: &AddOptions, root: &Path) -> Result<()> {
         blank_lines_before: 0,
     };
 
-    // Generate the raw representation
     fact.raw = writer::fact_to_raw(&fact);
 
-    // Add the fact to the appropriate location
     if let Some(ref section_path) = opts.section {
         add_to_section(&mut sheet, section_path, fact)?;
     } else {
-        // Add to preamble (root level)
         sheet.preamble.push(fact);
     }
 
-    // Write back
     let output = writer::write(&sheet);
     std::fs::write(&file_path, &output)
         .with_context(|| format!("failed to write {}", file_path.display()))?;
@@ -196,33 +181,24 @@ fn add_to_section(sheet: &mut FactSheet, section_path: &str, fact: Fact) -> Resu
         anyhow::bail!("section path too deep (max 6 levels)");
     }
 
-    // Navigate/create section hierarchy
     ensure_section_path(&mut sheet.sections, &parts, 1, fact);
     Ok(())
 }
 
 /// Recursively ensure the section path exists and append the fact to the leaf.
-fn ensure_section_path(
-    sections: &mut Vec<Section>,
-    parts: &[&str],
-    depth: usize,
-    fact: Fact,
-) {
+fn ensure_section_path(sections: &mut Vec<Section>, parts: &[&str], depth: usize, fact: Fact) {
     let target_name = parts[0];
 
-    // Find existing section at this level
     let existing_idx = sections
         .iter()
         .position(|s| s.title.eq_ignore_ascii_case(target_name));
 
     if parts.len() == 1 {
-        // This is the leaf section — add the fact here
         if let Some(idx) = existing_idx {
             let mut fact = fact;
             fact.blank_lines_before = 0;
             sections[idx].facts.push(fact);
         } else {
-            // Create new section
             let mut fact = fact;
             fact.blank_lines_before = 0;
             let section = Section {
@@ -236,11 +212,9 @@ fn ensure_section_path(
             sections.push(section);
         }
     } else {
-        // Intermediate section — navigate deeper
         if let Some(idx) = existing_idx {
             ensure_section_path(&mut sections[idx].children, &parts[1..], depth + 1, fact);
         } else {
-            // Create intermediate section and recurse
             let mut section = Section {
                 title: target_name.to_string(),
                 depth,
@@ -363,11 +337,7 @@ mod tests {
         run_in(&opts, dir.path()).unwrap();
 
         let content = fs::read_to_string(&facts_path).unwrap();
-        // Tags alone do NOT promote to mapping — they stay inline as @tag
-        assert_eq!(
-            content,
-            "- a tagged fact @mvp @core\n"
-        );
+        assert_eq!(content, "- a tagged fact @mvp @core\n");
     }
 
     #[test]
@@ -497,7 +467,12 @@ mod tests {
         };
         let result = run_in(&opts, dir.path());
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("ID cannot be empty"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("ID cannot be empty")
+        );
     }
 
     #[test]
@@ -539,7 +514,6 @@ mod tests {
                 "expected operator conflict error for '{op}', got: {err}"
             );
         }
-        // Mixed with valid tags — the operator tag is still rejected.
         let err = parse_tags("ok,not,also_ok").unwrap_err();
         assert!(
             err.to_string().contains("not"),

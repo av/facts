@@ -2,7 +2,6 @@
 ///
 /// Provides a way to address individual facts by their position in a
 /// FactSheet and navigate to them for reading or mutation.
-
 use crate::model::{Fact, FactSheet, Section};
 
 /// Location of a fact within a FactSheet.
@@ -64,10 +63,7 @@ pub fn navigate_to_section<'a>(sections: &'a [Section], path: &[usize]) -> &'a S
 }
 
 /// Navigate to a mutable section by index path.
-pub fn navigate_to_section_mut<'a>(
-    sections: &'a mut [Section],
-    path: &[usize],
-) -> &'a mut Section {
+pub fn navigate_to_section_mut<'a>(sections: &'a mut [Section], path: &[usize]) -> &'a mut Section {
     let mut current = &mut sections[path[0]];
     for &idx in &path[1..] {
         current = &mut current.children[idx];

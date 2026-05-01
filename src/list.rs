@@ -22,8 +22,7 @@ pub fn run(opts: &ListOptions) -> Result<()> {
     // Validate tag expression up front so malformed expressions fail early
     // instead of silently producing empty output.
     if let Some(ref expr) = opts.tags_expr {
-        validate_tag_expr(expr)
-            .map_err(|e| anyhow::anyhow!("invalid tag expression: {e}"))?;
+        validate_tag_expr(expr).map_err(|e| anyhow::anyhow!("invalid tag expression: {e}"))?;
     }
 
     let root = project::find_project_root()?;
@@ -59,13 +58,10 @@ pub fn run(opts: &ListOptions) -> Result<()> {
 
     let assigned_ids = id::assign_ids(&all_fact_labels);
 
-    // Compute the maximum ID width for alignment.
     let id_width = assigned_ids.iter().map(|id| id.len()).max().unwrap_or(3);
 
-    // Display facts, applying filters post-ID-assignment
     let mut fact_idx = 0;
     for sheet in &sheets {
-        // Apply file filter
         let file_matches = if let Some(ref f) = opts.file_filter {
             sheet.filename == *f || sheet.filename == format!("{f}.facts")
         } else {
@@ -76,7 +72,6 @@ pub fn run(opts: &ListOptions) -> Result<()> {
             let id = &assigned_ids[fact_idx];
             fact_idx += 1;
 
-            // Skip entire file if filtered out
             if !file_matches {
                 continue;
             }
@@ -103,13 +98,12 @@ pub fn run(opts: &ListOptions) -> Result<()> {
                 continue;
             }
 
-            if let Some(ref expr) = opts.tags_expr {
-                if !matches_tag_expr(expr, &fact.tags) {
-                    continue;
-                }
+            if let Some(ref expr) = opts.tags_expr
+                && !matches_tag_expr(expr, &fact.tags)
+            {
+                continue;
             }
 
-            // Format output line
             let display = format_fact_line(sheet, &path, id, &fact.label, id_width);
             println!("{display}");
         }
@@ -135,7 +129,6 @@ fn format_fact_line(
         parts
     };
 
-    // Right-pad the ID so all content after it aligns.
     let padded_id = format!("{:width$}", id, width = id_width);
     let dim_id = color::dim(&padded_id);
     let dim_sep = color::dim(">");

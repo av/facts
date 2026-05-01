@@ -7,10 +7,8 @@ pub fn assign_ids(facts: &[(String, Option<String>)]) -> Vec<String> {
     let mut ids: Vec<String> = Vec::with_capacity(facts.len());
     let mut used: HashMap<String, Vec<usize>> = HashMap::new();
 
-    // Pre-compute hashes
     let hashes: Vec<u128> = facts.iter().map(|(label, _)| full_hash(label)).collect();
 
-    // First pass: assign default 3-char IDs
     for (i, (_, explicit_id)) in facts.iter().enumerate() {
         let id = if let Some(eid) = explicit_id {
             eid.clone()
@@ -58,7 +56,6 @@ pub fn assign_ids(facts: &[(String, Option<String>)]) -> Vec<String> {
 
             let current_len = ids[extendable[0]].len();
             if current_len >= MAX_LEN || all_same_hash {
-                // Append a counter suffix to disambiguate
                 for (counter, &i) in extendable.iter().enumerate().skip(1) {
                     let old = ids[i].clone();
                     ids[i] = format!("{old}{counter}");
@@ -175,10 +172,8 @@ mod tests {
 
     #[test]
     fn test_assign_ids_many_duplicates() {
-        // Many identical labels should all get unique IDs
-        let facts: Vec<(String, Option<String>)> = (0..10)
-            .map(|_| ("same label".to_string(), None))
-            .collect();
+        let facts: Vec<(String, Option<String>)> =
+            (0..10).map(|_| ("same label".to_string(), None)).collect();
         let ids = assign_ids(&facts);
         assert_eq!(ids.len(), 10);
         let unique: std::collections::HashSet<_> = ids.iter().collect();
@@ -190,33 +185,27 @@ mod tests {
         let h = full_hash("test");
         assert_eq!(encode_base36(h, 3).len(), 3);
         assert_eq!(encode_base36(h, 5).len(), 5);
-        // Extending should produce a prefix relationship
+        // Shorter encoding is a suffix of longer (both use least-significant digits, reversed).
         let short = encode_base36(h, 3);
         let long = encode_base36(h, 5);
-        // The last 3 chars of the 5-char encoding should match the 3-char one
-        // (because we use least-significant digits, reversed)
-        // Actually, the 3-char version is the last 3 digits reversed.
-        // At len=3 we get digits [d2, d1, d0] reversed = [d0, d1, d2]
-        // At len=5 we get digits [d4, d3, d2, d1, d0] reversed = [d0, d1, d2, d3, d4]
-        // So the 3-char one should be a suffix of the 5-char one (last 3 chars)
         assert_eq!(&long[2..], &short[..]);
     }
 
     #[test]
     fn test_computed_id_extended_when_colliding_with_explicit() {
-        // If a computed ID happens to match an explicit ID, the computed one
-        // should be extended to resolve the collision.
         let label = "some fact";
         let computed_3 = encode_base36(full_hash(label), 3);
 
-        // Second fact has an explicit ID equal to the first fact's computed ID.
         let facts = vec![
             (label.to_string(), None),
             ("other fact".to_string(), Some(computed_3.clone())),
         ];
         let ids = assign_ids(&facts);
         assert_eq!(ids[1], computed_3, "explicit ID must be preserved");
-        assert_ne!(ids[0], ids[1], "computed ID must be extended to avoid collision");
+        assert_ne!(
+            ids[0], ids[1],
+            "computed ID must be extended to avoid collision"
+        );
         assert!(
             ids[0].len() > 3,
             "computed ID should be longer than 3 chars after extension"

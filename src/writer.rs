@@ -2,22 +2,18 @@
 ///
 /// Produces byte-for-byte deterministic output: parse then write with no
 /// changes yields identical content.
-
 use crate::model::{Fact, FactSheet, Section};
 
 /// Serialize a FactSheet back to the .facts format.
 pub fn write(sheet: &FactSheet) -> String {
     let mut out = String::new();
 
-    // Preamble facts (before any heading)
     write_facts(&mut out, &sheet.preamble, true);
 
-    // Sections
     for section in &sheet.sections {
         write_section(&mut out, section);
     }
 
-    // Ensure file ends with a trailing newline
     if !out.is_empty() && !out.ends_with('\n') {
         out.push('\n');
     }
@@ -27,17 +23,14 @@ pub fn write(sheet: &FactSheet) -> String {
 
 /// Write a section and its children recursively.
 fn write_section(out: &mut String, section: &Section) {
-    // Blank lines before heading
     for _ in 0..section.blank_lines_before {
         out.push('\n');
     }
     out.push_str(&section.raw_heading);
     out.push('\n');
 
-    // Facts in this section
     write_facts(out, &section.facts, false);
 
-    // Child sections
     for child in &section.children {
         write_section(out, child);
     }
@@ -46,7 +39,6 @@ fn write_section(out: &mut String, section: &Section) {
 /// Write a list of facts.
 fn write_facts(out: &mut String, facts: &[Fact], is_preamble: bool) {
     for (i, fact) in facts.iter().enumerate() {
-        // Blank lines before fact
         let blanks = if is_preamble && i == 0 && fact.blank_lines_before == 0 {
             0
         } else {
@@ -79,8 +71,6 @@ fn is_ambiguous_as_plain(label: &str) -> bool {
 /// This is used when creating facts via the `add` command.
 pub fn fact_to_raw(fact: &Fact) -> String {
     if fact.is_plain {
-        // If the label would be misinterpreted as a mapping key on re-parse,
-        // write it as a mapping fact with an explicit `label:` key instead.
         if is_ambiguous_as_plain(&fact.label) {
             let mut lines = vec![format!("- label: {}", fact.label)];
             if !fact.tags.is_empty() {
@@ -89,15 +79,12 @@ pub fn fact_to_raw(fact: &Fact) -> String {
             }
             return lines.join("\n");
         }
-        // Plain string fact
         let mut line = format!("- {}", fact.label);
-        // Tags go inline for plain string facts
         for tag in &fact.tags {
             line.push_str(&format!(" @{tag}"));
         }
         line
     } else {
-        // Mapping fact
         let mut lines = Vec::new();
         if let Some(ref id) = fact.explicit_id {
             lines.push(format!("  id: {id}"));
@@ -261,7 +248,6 @@ mod tests {
             raw: String::new(),
             blank_lines_before: 0,
         };
-        // Must be written as mapping to avoid misparse
         assert_eq!(fact_to_raw(&fact), "- label: command: echo hello");
     }
 

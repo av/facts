@@ -3,7 +3,6 @@
 /// Uses atomic file creation (`create_new`) as a simple cross-platform mutex.
 /// A `.facts.lock` file in the project root prevents concurrent modifications.
 /// Stale locks (older than 60 seconds) are automatically broken.
-
 use std::fs::{self, File, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::thread;
@@ -71,8 +70,10 @@ impl FileLock {
                     thread::sleep(RETRY_INTERVAL);
                 }
                 Err(e) => {
-                    return Err(e)
-                        .context(format!("failed to create lock file {}", lock_path.display()));
+                    return Err(e).context(format!(
+                        "failed to create lock file {}",
+                        lock_path.display()
+                    ));
                 }
             }
         }

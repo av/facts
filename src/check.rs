@@ -27,8 +27,14 @@ struct CheckResult {
 }
 
 enum CheckStatus {
-    Passed { command: String },
-    Failed { command: String, exit_code: i32, stderr: String },
+    Passed {
+        command: String,
+    },
+    Failed {
+        command: String,
+        exit_code: i32,
+        stderr: String,
+    },
     Manual,
 }
 
@@ -112,7 +118,6 @@ fn run_with_timeout(mut cmd: Command, timeout: Duration) -> (i32, String) {
     loop {
         match child.try_wait() {
             Ok(Some(status)) => {
-                // Process finished
                 let stderr = child
                     .stderr
                     .take()
@@ -125,7 +130,6 @@ fn run_with_timeout(mut cmd: Command, timeout: Duration) -> (i32, String) {
                 return (status.code().unwrap_or(1), stderr);
             }
             Ok(None) => {
-                // Still running — check timeout
                 if start.elapsed() >= timeout {
                     let _ = child.kill();
                     let _ = child.wait();
@@ -145,8 +149,7 @@ pub fn run(opts: &CheckOptions) -> Result<bool> {
     // Validate tag expression up front so malformed expressions fail early
     // instead of silently producing empty output.
     if let Some(ref expr) = opts.tags_expr {
-        validate_tag_expr(expr)
-            .map_err(|e| anyhow::anyhow!("invalid tag expression: {e}"))?;
+        validate_tag_expr(expr).map_err(|e| anyhow::anyhow!("invalid tag expression: {e}"))?;
     }
 
     let root = project::find_project_root()?;
@@ -202,7 +205,6 @@ pub fn run(opts: &CheckOptions) -> Result<bool> {
         sheets.push(sheet);
     }
 
-    // Collect all facts for ID assignment
     let mut all_fact_labels: Vec<(String, Option<String>)> = Vec::new();
     for sheet in &sheets {
         for (_path, fact) in sheet.all_facts() {
@@ -211,7 +213,6 @@ pub fn run(opts: &CheckOptions) -> Result<bool> {
     }
     let assigned_ids = id::assign_ids(&all_fact_labels);
 
-    // Build list of facts to check (applying tag filter)
     let timeout = opts.timeout.map(Duration::from_secs);
     let mut results: Vec<CheckResult> = Vec::new();
     let mut fact_idx = 0;
@@ -221,11 +222,10 @@ pub fn run(opts: &CheckOptions) -> Result<bool> {
             let id = assigned_ids[fact_idx].clone();
             fact_idx += 1;
 
-            // Apply tag filter
-            if let Some(ref expr) = opts.tags_expr {
-                if !matches_tag_expr(expr, &fact.tags) {
-                    continue;
-                }
+            if let Some(ref expr) = opts.tags_expr
+                && !matches_tag_expr(expr, &fact.tags)
+            {
+                continue;
             }
 
             let display_path = format_display_path(sheet, &section_path, &fact.label);
@@ -234,7 +234,9 @@ pub fn run(opts: &CheckOptions) -> Result<bool> {
                 Some(command) => {
                     let (exit_code, stderr) = run_command(command, &root, timeout);
                     if exit_code == 0 {
-                        CheckStatus::Passed { command: command.clone() }
+                        CheckStatus::Passed {
+                            command: command.clone(),
+                        }
                     } else {
                         CheckStatus::Failed {
                             command: command.clone(),
@@ -254,20 +256,25 @@ pub fn run(opts: &CheckOptions) -> Result<bool> {
         }
     }
 
-    // Group by status
-    let passed: Vec<&CheckResult> = results.iter().filter(|r| matches!(r.status, CheckStatus::Passed { .. })).collect();
-    let failed: Vec<&CheckResult> = results.iter().filter(|r| matches!(r.status, CheckStatus::Failed { .. })).collect();
-    let manual: Vec<&CheckResult> = results.iter().filter(|r| matches!(r.status, CheckStatus::Manual)).collect();
+    let passed: Vec<&CheckResult> = results
+        .iter()
+        .filter(|r| matches!(r.status, CheckStatus::Passed { .. }))
+        .collect();
+    let failed: Vec<&CheckResult> = results
+        .iter()
+        .filter(|r| matches!(r.status, CheckStatus::Failed { .. }))
+        .collect();
+    let manual: Vec<&CheckResult> = results
+        .iter()
+        .filter(|r| matches!(r.status, CheckStatus::Manual))
+        .collect();
 
     let has_failures = !failed.is_empty();
 
-    // Compute max ID width for alignment across all groups.
     let id_width = results.iter().map(|r| r.id.len()).max().unwrap_or(3);
-    // Total indent for detail lines: "  " + marker + " " + padded_id + " "
-    // e.g. "  ✓ abc  " = 2 + 1(marker) + 1(space) + id_width + 2(trailing spaces)
+    // "  " + marker + " " + padded_id + " " = id_width + 6
     let detail_indent = id_width + 6;
 
-    // Print passed
     if !passed.is_empty() {
         println!("{}", color::bold(&color::green("passed")));
         for r in &passed {
@@ -284,11 +291,15 @@ pub fn run(opts: &CheckOptions) -> Result<bool> {
         println!();
     }
 
-    // Print failed
     if !failed.is_empty() {
         println!("{}", color::bold(&color::red("failed")));
         for r in &failed {
-            if let CheckStatus::Failed { command, exit_code, stderr } = &r.status {
+            if let CheckStatus::Failed {
+                command,
+                exit_code,
+                stderr,
+            } = &r.status
+            {
                 let padded_id = format!("{:width$}", r.id, width = id_width);
                 println!(
                     "  {} {}",
@@ -296,20 +307,11 @@ pub fn run(opts: &CheckOptions) -> Result<bool> {
                     r.display_path,
                 );
                 let pad = " ".repeat(detail_indent);
-                println!(
-                    "{pad}{} {exit_code}",
-                    color::dim("exit:"),
-                );
-                println!(
-                    "{pad}{} {command}",
-                    color::dim("command:"),
-                );
+                println!("{pad}{} {exit_code}", color::dim("exit:"),);
+                println!("{pad}{} {command}", color::dim("command:"),);
                 if !stderr.is_empty() {
                     for line in stderr.lines() {
-                        println!(
-                            "{pad}{} {line}",
-                            color::dim("stderr:"),
-                        );
+                        println!("{pad}{} {line}", color::dim("stderr:"),);
                     }
                 }
             }
@@ -317,7 +319,6 @@ pub fn run(opts: &CheckOptions) -> Result<bool> {
         println!();
     }
 
-    // Print manual
     if !manual.is_empty() {
         println!("{}", color::bold(&color::yellow("manual")));
         for r in &manual {
@@ -331,7 +332,6 @@ pub fn run(opts: &CheckOptions) -> Result<bool> {
         println!();
     }
 
-    // Summary line — bold to stand out from the list above
     let summary = format!(
         "{}, {}, {}",
         color::green(&format!("{} passed", passed.len())),
@@ -340,7 +340,6 @@ pub fn run(opts: &CheckOptions) -> Result<bool> {
     );
     println!("{}", color::bold(&summary));
 
-    // Legend
     println!(
         "{}",
         color::dim("? = no command — verified manually by the agent"),
@@ -392,7 +391,11 @@ mod tests {
 
     #[test]
     fn test_run_command_timeout() {
-        let (code, stderr) = run_command("sleep 10", &project_root(), Some(Duration::from_millis(100)));
+        let (code, stderr) = run_command(
+            "sleep 10",
+            &project_root(),
+            Some(Duration::from_millis(100)),
+        );
         assert_eq!(code, 124);
         assert!(stderr.contains("timed out"));
     }

@@ -8,47 +8,63 @@
 ## format
 
 ### file
-- project root is the directory containing the nearest parent .git
-- fact sheets are *.facts files in the project root
-- .facts is the default/main fact sheet
+- label: project root is the directory containing the nearest parent .git
+  command: grep -q "\.git" src/project.rs
+  tags: [implemented]
+- label: fact sheets are *.facts files in the project root
+  command: grep -q "\.facts" src/project.rs
+- label: .facts is the default/main fact sheet
+  command: grep -q "\"\.facts\"" src/project.rs
 - naming is semantic (e.g. cli.facts for CLI-specific facts)
 - every line is a heading, a fact, or blank — no other content
 
 ### parsing
 - headings (# prefixed lines) are extracted first as structure
 - each section body is then parsed as YAML
-- the format is valid Markdown and valid YAML per-section
+- label: the format is valid Markdown and valid YAML per-section
+  command: facts lint
 
 ### sections
 - heading depth maps to hierarchy
-- sections are addressable by path (e.g. distribution/npm)
+- label: sections are addressable by path (e.g. distribution/npm)
+  command: grep -q "section.*path\|section_path\|--section" src/list.rs
 - the CLI treats sections as first-class citizens
 - sections are created implicitly when a fact is added to them
 - sections are removed when their last fact is deleted
 
 ### facts
-- each fact is a YAML sequence item (- prefixed)
+- label: each fact is a YAML sequence item (- prefixed)
+  command: grep -q "^- " .facts
 - a fact can be a plain string or a mapping
-- mapping keys: id (optional), label (required), command (optional), tags (optional)
-- no other keys are allowed
+- label: mapping keys: id (optional), label (required), command (optional), tags (optional)
+  command: grep -q 'known_keys.*=.*\["label", "command", "id", "tags"\]' src/lint.rs
+- label: no other keys are allowed
+  command: grep -q "invalid.*key\|unknown.*key\|Invalid key" src/lint.rs
 - plain string facts are equivalent to a mapping with only a label
 - each fact is fully atomic and independent
 
 ### tags
-- tags are freeform @word tokens for filtering and categorisation
+- tags are freeform tokens for filtering and categorisation @word
 - inline syntax: - some fact @mvp @core
 - mapping syntax: tags: [mvp, core]
 - both can coexist on a single fact — parsed as the union
 - tags are stripped from the label before ID hashing and display
-- write normalises tags to one location: inline for plain strings, tags key for mappings
-- lint flags mixed inline and mapping tags on the same fact
-- @implemented is a special tag used by the facts-implement skill
-- @implemented is informational — check still runs commands for tagged facts
-- tag names cannot conflict with filter operators (and, or, not)
+- label: write normalises tags to one location: inline for plain strings, tags key for mappings
+  command: grep -q "tags.join" src/writer.rs && grep -q "@{tag}" src/writer.rs
+- label: lint flags mixed inline and mapping tags on the same fact
+  command: grep -q "mixed.*tag\|inline.*mapping.*tag\|Mixed" src/lint.rs
+- label: is a special tag used by the facts-implement skill
+  tags: [implemented]
+- label: is informational — check still runs commands for tagged facts
+  command: ! grep -q "skip.*implemented\|filter.*implemented" src/check.rs
+  tags: [implemented]
+- label: tag names cannot conflict with filter operators (and, or, not)
+  command: grep -q "conflicts with filter operator" src/add.rs
 
 ### identity
 - every fact has a short ID derived from a hash of its label (tags stripped)
-- IDs are 3 characters by default, extended only on collision
+- label: IDs are 3 characters by default, extended only on collision
+  command: grep -q "encode_base36.*3)" src/id.rs
 - IDs are computed, not stored in the file
 - an explicit id key in a mapping overrides the generated ID
 - IDs are stable as long as the label does not change
@@ -56,11 +72,15 @@
 ### validation
 - facts with a command are validated programmatically by the CLI
 - facts without a command are validated by the agent against the codebase
-- commands run via $SHELL, falling back to sh if unset
-- working directory is the project root
+- label: commands run via $SHELL, falling back to sh if unset
+  command: grep -q "SHELL.*sh" src/check.rs
+- label: working directory is the project root
+  command: grep -q "current_dir(project_root\|root)" src/check.rs
 - exit 0 means the fact holds, non-zero means it fails
-- all commands run on every check — no caching
-- commands run sequentially
+- label: all commands run on every check — no caching
+  command: ! grep -rq "cache\|Cache\|cached" src/check.rs
+- label: commands run sequentially
+  command: ! grep -q "async\|tokio\|thread::spawn\|rayon" src/check.rs
 - no timeout by default, configurable per-command via --timeout flag
 - fact authors should write fast, idempotent check commands
 - manual facts do not affect the exit code
@@ -71,26 +91,40 @@
 
 - label: the CLI is named facts
   command: facts --version 2>&1 | head -1 | grep -q facts
-- written in Rust
-- distributed as a single compact binary
+- label: written in Rust
+  command: grep -q "edition" Cargo.toml
+- label: distributed as a single compact binary
+  command: grep -q "\[\[bin\]\]\|name.*=.*\"facts\"" Cargo.toml
 
 ### subcommands
-- bare facts (no subcommand) defaults to list
-- init — scaffold a .facts file, detects well-known framework/runtime combos
-- check — run all command-facts, report pass/fail/manual
-- list — show facts in file order, purely structural
-- add — append a fact to a file and section
-- remove — remove a fact by ID, outputs what was removed
-- edit — modify a fact by ID, preserves explicit id
-- lint — validate that fact sheets are parseable
-- uninit — reverse of init, removes .facts file and agent skills
+- label: bare facts (no subcommand) defaults to list
+  command: grep -q "Option<Command>" src/main.rs
+- label: init — scaffold a .facts file, detects well-known framework/runtime combos
+  command: grep -q "Init" src/main.rs && test -f src/init.rs
+- label: check — run all command-facts, report pass/fail/manual
+  command: grep -q "Check" src/main.rs && test -f src/check.rs
+- label: list — show facts in file order, purely structural
+  command: grep -q "List" src/main.rs && test -f src/list.rs
+- label: add — append a fact to a file and section
+  command: grep -q "Add" src/main.rs && test -f src/add.rs
+- label: remove — remove a fact by ID, outputs what was removed
+  command: grep -q "Remove" src/main.rs && test -f src/remove.rs
+- label: edit — modify a fact by ID, preserves explicit id
+  command: grep -q "Edit" src/main.rs && test -f src/edit.rs
+- label: lint — validate that fact sheets are parseable
+  command: grep -q "Lint" src/main.rs && test -f src/lint.rs
+- label: uninit — reverse of init, removes .facts file and agent skills
+  command: grep -q "Uninit" src/main.rs && test -f src/uninit.rs
 
 ### init
 - creates a .facts file in the project root
-- detects well-known framework/runtime combos (e.g. Cargo.toml, package.json)
+- label: detects well-known framework/runtime combos (e.g. Cargo.toml, package.json)
+  command: grep -q "Cargo.toml\|package.json" src/init.rs
 - scaffolds initial facts based on detected stack
-- installs three agent skills to .agents/skills/ (facts, facts-discover, facts-implement)
-- creates .claude/skills/ symlinks for Claude Code integration
+- label: installs three agent skills to .agents/skills/ (facts, facts-discover, facts-implement)
+  command: grep -q "facts.*facts-discover.*facts-implement\|SKILLS" src/init.rs
+- label: creates .claude/skills/ symlinks for Claude Code integration
+  command: grep -q "claude.*skills\|\.claude" src/init.rs
 - init is idempotent — safe to run multiple times
 
 ### check
@@ -102,27 +136,34 @@
 - failed facts show command, exit code, and stderr
 - manual facts are listed without detail
 - summary line: N passed, N failed, N manual
-- legend at the bottom explains manual marker
+- label: legend at the bottom explains manual marker
+  command: grep -q "no command\|verified manually" src/check.rs
 - exit 0 if all command-facts pass, non-zero if any fail
 - --tags flag accepts a boolean filter expression: "mvp and not blocked"
 - --timeout flag sets a per-command timeout
-- filter expressions support and, or, not, and parentheses
+- label: filter expressions support and, or, not, and parentheses
+  command: grep -q "and\|or\|not\|parse_expr" src/tags.rs
 
 ### list
-- same format as check but without status markers
+- label: same format as check but without status markers
+  command: ! grep -q "CheckStatus\|✓\|✗" src/list.rs
 - shows facts in file order
 - each fact line shows ID and full path (file > section > label)
 - file prefix omitted for .facts (default), shown for other files
-- supports filtering: --file, --section, --has-command, --manual
+- label: supports filtering: --file, --section, --has-command, --manual
+  command: grep -q "file_filter" src/list.rs && grep -q "has_command" src/list.rs && grep -q "manual" src/list.rs
 - --tags flag accepts a boolean filter expression
-- default target is all *.facts files
+- label: default target is all *.facts files
+  command: grep -q "discover_fact_files" src/list.rs
 
 ### add
-- defaults to .facts at the top level
+- label: defaults to .facts at the top level
+  command: grep -q "unwrap_or.*\".facts\"" src/add.rs
 - --section flag targets a specific section (created if needed)
 - --file flag targets a specific *.facts file (created if needed)
 - --command flag adds a validation command
-- --id flag sets an explicit ID
+- label: --id flag sets an explicit ID
+  command: grep -q "\-\-id\|explicit_id" src/add.rs
 - --tags flag adds tags
 - appends to the end of the target section
 - file order is canonical
@@ -130,14 +171,18 @@
 ### remove
 - takes an ID as argument
 - outputs the removed fact
-- silent — no confirmation prompt
+- label: silent — no confirmation prompt
+  command: ! grep -q "confirm\|prompt\|stdin\|read_line" src/remove.rs
 
 ### edit
 - takes an ID as argument
 - --label, --command, --id, --tags flags modify respective fields
-- --add-tag appends tags without removing existing ones
-- --remove-tag removes specific tags
-- --tags conflicts with --add-tag and --remove-tag
+- label: --add-tag appends tags without removing existing ones
+  command: grep -q "add.tag\|add_tag" src/edit.rs
+- label: --remove-tag removes specific tags
+  command: grep -q "remove.tag\|remove_tag" src/edit.rs
+- label: --tags conflicts with --add-tag and --remove-tag
+  command: grep -q "conflicts_with\|conflict" src/main.rs
 - preserves explicit id when changing other fields
 - when a plain string fact gains a command or id, it becomes a mapping
 - tags migrate from inline to tags key when fact becomes a mapping
@@ -145,91 +190,129 @@
 ### lint
 - validates that fact sheets are parseable
 - reports clear error messages for structural issues
-- flags mixed inline and mapping tags on the same fact
-- does not run any validation commands
-- warns on duplicate explicit IDs across files
-- warns on bare tags, CRLF endings, empty labels, unknown continuations, duplicate keys, and double-@ tags
+- label: flags mixed inline and mapping tags on the same fact
+  command: grep -q "mixed\|inline.*mapping\|Mixed" src/lint.rs
+- label: does not run any validation commands
+  command: ! grep -q "run_command\|execute.*command" src/lint.rs
+- label: warns on duplicate explicit IDs across files
+  command: grep -q "duplicate.*id\|Duplicate" src/lint.rs
+- label: warns on bare tags, CRLF endings, empty labels, unknown continuations, duplicate keys, and double-@ tags
+  command: grep -q "CRLF\|bare.*tag\|empty.*label\|double.*@\|@@\|continuation\|duplicate.*key" src/lint.rs
 
 ### errors
 - every error state has a clear, descriptive error message
 - invalid operations exit non-zero
 
 ### output
-- polished terminal output with color and alignment
-- green for pass, red for fail, yellow for manual
-- colors disabled when output is not a TTY
+- label: polished terminal output with color and alignment
+  command: test -f src/color.rs && grep -q "green\|red\|yellow\|bold" src/color.rs
+- label: green for pass, red for fail, yellow for manual
+  command: grep -q "green.*pass\|red.*fail\|yellow.*manual" src/check.rs
+- label: colors disabled when output is not a TTY
+  command: grep -q "is_terminal\|IsTerminal" src/color.rs
 - write back is byte-for-byte deterministic
 - parse then write with no changes produces identical output
 
 ### uninit
-- requires --force to delete a non-empty .facts file
-- removes agent skills from .agents/skills/ and .claude/skills/
+- label: requires --force to delete a non-empty .facts file
+  command: grep -q "force\|--force" src/uninit.rs
+- label: removes agent skills from .agents/skills/ and .claude/skills/
+  command: grep -q "agents.*skills\|claude.*skills" src/uninit.rs
 - preserves named .facts files (only removes .facts)
 - uninit is idempotent — safe to run multiple times
 
 ## architecture
 
-- minimal dependencies
+- label: minimal dependencies
+  command: test $(sed -n "/^\[dependencies\]/,/^\[/p" Cargo.toml | grep -c "^[a-z]") -le 3
 - label: clap for CLI argument parsing
   command: grep -q '^clap' Cargo.toml
 - label: anyhow for error handling
   command: grep -q '^anyhow' Cargo.toml
 - label: integration tests for all user-facing features
   command: test -f tests/cli.rs
-- advisory file locking for write operations via .facts.lock
-- inline unit tests in source modules alongside implementation
+- label: advisory file locking for write operations via .facts.lock
+  command: test -f src/lock.rs && grep -q "facts.lock" src/lock.rs
+- label: inline unit tests in source modules alongside implementation
+  command: grep -rq "#\[cfg(test)\]" src/
 
 ## platforms
 
-- linux amd64 and arm64
-- macOS amd64 and arm64
-- windows amd64
+- label: linux amd64 and arm64
+  command: grep -q "x86_64-unknown-linux-gnu" .github/workflows/release.yml && grep -q "aarch64-unknown-linux-gnu" .github/workflows/release.yml
+- label: macOS amd64 and arm64
+  command: grep -q "x86_64-apple-darwin" .github/workflows/release.yml && grep -q "aarch64-apple-darwin" .github/workflows/release.yml
+- label: windows amd64
+  command: grep -q "x86_64-pc-windows-msvc" .github/workflows/release.yml
 
 ## releasing
 
 - bump version in Cargo.toml, commit, push, then tag and push the tag
-- tags follow vX.Y.Z format (e.g. v0.2.0)
-- pushing a v* tag triggers the GitHub Actions release workflow
-- the workflow builds binaries for all 5 platform targets in parallel
-- binaries are packaged as tar.gz (unix) and zip (windows)
-- a GitHub release is created automatically with generated release notes
+- label: tags follow vX.Y.Z format (e.g. v0.2.0)
+  command: grep -q "v\*" .github/workflows/release.yml
+- label: pushing a v* tag triggers the GitHub Actions release workflow
+  command: grep -q "v\*" .github/workflows/release.yml
+- label: the workflow builds binaries for all 5 platform targets in parallel
+  command: test $(grep -c "target:" .github/workflows/release.yml) -ge 5
+- label: binaries are packaged as tar.gz (unix) and zip (windows)
+  command: grep -q "tar.gz\|tar czf" .github/workflows/release.yml && grep -q "zip\|7z" .github/workflows/release.yml
+- label: a GitHub release is created automatically with generated release notes
+  command: grep -q "create-release\|softprops.*action-gh-release\|gh release" .github/workflows/release.yml
 - release artifacts are uploaded to the GitHub release
 
 ## distribution
 
 ### npm
-- published as an npm package wrapping the prebuilt binary
+- label: published as an npm package wrapping the prebuilt binary
+  command: test -f npm/package.json && grep -q "facts" npm/package.json
 
 ### pypi
-- published as a PyPI package wrapping the prebuilt binary
+- label: published as a PyPI package wrapping the prebuilt binary
+  command: test -f pypi/pyproject.toml && grep -q "facts" pypi/pyproject.toml
 
 ### install.sh
-- downloads the binary from GitHub releases
+- label: downloads the binary from GitHub releases
+  command: test -f install.sh
 
 ## skills
 
-- all skills are agent-agnostic
-- all installable via skills.sh
-- skill names use facts- prefix to avoid collision
-- source is in ./skills/
+- label: all skills are agent-agnostic
+  command: ! grep -rq "claude\|Claude Code" skills/*/SKILL.md
+- label: all installable via skills.sh
+  command: test -f skills.sh
+- label: skill names use facts- prefix to avoid collision
+  command: ls skills/ | grep -q "^facts"
+- label: source is in ./skills/
+  command: test -d skills
 
 ### facts
 - teaches agents how to install and use facts
-- source is in ./skills/facts/
+- label: source is in ./skills/facts/
+  command: test -f skills/facts/SKILL.md
 
 ### facts-discover
-- instructs agent to scan the codebase and make the fact sheet an accurate mirror of reality
-- uses subagents to scan different areas of the codebase in parallel
+- label: instructs agent to scan the codebase and make the fact sheet an accurate mirror of reality
+  command: grep -q "scan.*codebase\|mirror" skills/facts-discover/SKILL.md
+- label: uses subagents to scan different areas of the codebase in parallel
+  command: grep -q "subagent\|parallel" skills/facts-discover/SKILL.md
 - adds, edits, and removes facts to match what is actually true now
-- only records what is — not what should be
+- label: only records what is — not what should be
+  command: grep -q "Only record what is" skills/facts-discover/SKILL.md
 - reports what changed at the end
-- source is in ./skills/facts-discover/
+- label: source is in ./skills/facts-discover/
+  command: test -f skills/facts-discover/SKILL.md
 
 ### facts-implement
-- instructs agent to read the fact sheet as a spec and implement all unimplemented facts
+- label: instructs agent to read the fact sheet as a spec and implement all unimplemented facts
+  command: grep -q "implement.*unimplemented\|spec" skills/facts-implement/SKILL.md
 - agent decides order and priority based on its understanding of the codebase
-- uses subagents to parallelize independent work
-- validation commands are the tests — no separate test step
-- marks completed facts with @implemented tag using --add-tag
+- label: uses subagents to parallelize independent work
+  command: grep -q "subagent\|parallel" skills/facts-implement/SKILL.md
+- label: validation commands are the tests — no separate test step
+  command: grep -q "validation.*command.*test\|command.*test\|no separate test" skills/facts-implement/SKILL.md
+- label: marks completed facts with tag using --add-tag
+  command: grep -q "@implemented\|--add-tag" skills/facts-implement/SKILL.md
+  tags: [implemented]
 - reports remaining work and blockers if it cannot complete everything
-- source is in ./skills/facts-implement/
+- label: source is in ./skills/facts-implement/
+  command: test -f skills/facts-implement/SKILL.md

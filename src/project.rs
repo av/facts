@@ -5,8 +5,7 @@ use anyhow::{Context, Result};
 
 /// Find the project root by looking for the nearest parent directory containing `.git`.
 pub fn find_project_root() -> Result<PathBuf> {
-    let cwd =
-        std::env::current_dir().context("failed to determine current directory")?;
+    let cwd = std::env::current_dir().context("failed to determine current directory")?;
     find_project_root_from(&cwd)
 }
 
@@ -33,15 +32,13 @@ pub fn discover_fact_files(root: &Path) -> Result<Vec<PathBuf>> {
     {
         let entry = entry?;
         let path = entry.path();
-        if path.is_file() {
-            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if name.ends_with(".facts") {
-                    files.push(path);
-                }
-            }
+        if path.is_file()
+            && let Some(name) = path.file_name().and_then(|n| n.to_str())
+            && name.ends_with(".facts")
+        {
+            files.push(path);
         }
     }
-    // Sort for deterministic order, with .facts first
     files.sort_by(|a, b| {
         let a_name = a.file_name().unwrap().to_str().unwrap();
         let b_name = b.file_name().unwrap().to_str().unwrap();

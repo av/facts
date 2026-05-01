@@ -1,7 +1,6 @@
 /// Minimal colored terminal output.
 ///
 /// Colors are enabled only when stdout is a TTY.
-
 use std::io::IsTerminal;
 use std::sync::OnceLock;
 

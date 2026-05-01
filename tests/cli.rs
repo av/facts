@@ -2,7 +2,6 @@
 ///
 /// Each test creates an isolated temp directory with a `.git` marker
 /// and `.facts` file(s), then runs the compiled binary end-to-end.
-
 use assert_cmd::Command;
 use predicates::prelude::*;
 use std::fs;
@@ -65,9 +64,7 @@ fn list_shows_section_path() {
 
 #[test]
 fn list_filter_by_section() {
-    let dir = project(
-        "# alpha\n\n- alpha fact\n\n# beta\n\n- beta fact\n",
-    );
+    let dir = project("# alpha\n\n- alpha fact\n\n# beta\n\n- beta fact\n");
     facts_cmd(&dir)
         .args(["list", "--section", "beta"])
         .assert()
@@ -78,9 +75,7 @@ fn list_filter_by_section() {
 
 #[test]
 fn list_filter_has_command() {
-    let dir = project(
-        "- manual fact\n- label: cmd fact\n  command: echo hi\n",
-    );
+    let dir = project("- manual fact\n- label: cmd fact\n  command: echo hi\n");
     facts_cmd(&dir)
         .args(["list", "--has-command"])
         .assert()
@@ -91,9 +86,7 @@ fn list_filter_has_command() {
 
 #[test]
 fn list_filter_manual() {
-    let dir = project(
-        "- manual fact\n- label: cmd fact\n  command: echo hi\n",
-    );
+    let dir = project("- manual fact\n- label: cmd fact\n  command: echo hi\n");
     facts_cmd(&dir)
         .args(["list", "--manual"])
         .assert()
@@ -104,9 +97,7 @@ fn list_filter_manual() {
 
 #[test]
 fn list_filter_tags() {
-    let dir = project(
-        "- tagged fact @mvp\n- untagged fact\n",
-    );
+    let dir = project("- tagged fact @mvp\n- untagged fact\n");
     facts_cmd(&dir)
         .args(["list", "--tags", "mvp"])
         .assert()
@@ -128,10 +119,7 @@ fn bare_facts_defaults_to_list() {
 #[test]
 fn list_file_prefix_omitted_for_default() {
     let dir = project("- a fact\n");
-    let output = facts_cmd(&dir)
-        .arg("list")
-        .output()
-        .unwrap();
+    let output = facts_cmd(&dir).arg("list").output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
     // ".facts" should NOT appear as a prefix in the output
     assert!(
@@ -145,10 +133,7 @@ fn list_file_prefix_shown_for_named_file() {
     let dir = empty_project();
     fs::write(dir.path().join("cli.facts"), "- a cli fact\n").unwrap();
 
-    let output = facts_cmd(&dir)
-        .arg("list")
-        .output()
-        .unwrap();
+    let output = facts_cmd(&dir).arg("list").output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
         stdout.contains("cli.facts"),
@@ -201,10 +186,7 @@ fn check_summary_line_format() {
     let dir = project(
         "- label: passes\n  command: \"true\"\n- label: fails\n  command: \"false\"\n- a manual fact\n",
     );
-    let output = facts_cmd(&dir)
-        .arg("check")
-        .output()
-        .unwrap();
+    let output = facts_cmd(&dir).arg("check").output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("1 passed"));
     assert!(stdout.contains("1 failed"));
@@ -228,28 +210,19 @@ fn check_tags_filter() {
 #[test]
 fn check_exit_code_zero_when_all_pass() {
     let dir = project("- label: ok\n  command: \"true\"\n");
-    facts_cmd(&dir)
-        .arg("check")
-        .assert()
-        .success();
+    facts_cmd(&dir).arg("check").assert().success();
 }
 
 #[test]
 fn check_exit_code_nonzero_when_any_fail() {
     let dir = project("- label: nope\n  command: \"false\"\n");
-    facts_cmd(&dir)
-        .arg("check")
-        .assert()
-        .failure();
+    facts_cmd(&dir).arg("check").assert().failure();
 }
 
 #[test]
 fn check_exit_zero_with_only_manual_facts() {
     let dir = project("- just a manual fact\n");
-    facts_cmd(&dir)
-        .arg("check")
-        .assert()
-        .success();
+    facts_cmd(&dir).arg("check").assert().success();
 }
 
 // ===========================================================================
@@ -340,10 +313,7 @@ fn remove_by_id_outputs_label() {
     let dir = project("- fact to remove\n- fact to keep\n");
 
     // First, find the ID for "fact to remove" by listing
-    let list_output = facts_cmd(&dir)
-        .arg("list")
-        .output()
-        .unwrap();
+    let list_output = facts_cmd(&dir).arg("list").output().unwrap();
     let stdout = String::from_utf8_lossy(&list_output.stdout);
     // Each line starts with the ID followed by two spaces
     let id = stdout
@@ -384,10 +354,7 @@ fn edit_label() {
     let dir = project("- original label\n");
 
     // Find ID
-    let list_output = facts_cmd(&dir)
-        .arg("list")
-        .output()
-        .unwrap();
+    let list_output = facts_cmd(&dir).arg("list").output().unwrap();
     let stdout = String::from_utf8_lossy(&list_output.stdout);
     let id = stdout
         .lines()
@@ -411,10 +378,7 @@ fn edit_label() {
 fn edit_adds_command() {
     let dir = project("- plain fact\n");
 
-    let list_output = facts_cmd(&dir)
-        .arg("list")
-        .output()
-        .unwrap();
+    let list_output = facts_cmd(&dir).arg("list").output().unwrap();
     let stdout = String::from_utf8_lossy(&list_output.stdout);
     let id = stdout
         .lines()
@@ -438,10 +402,7 @@ fn edit_adds_command() {
 fn edit_tags() {
     let dir = project("- label: tagged\n  tags: [old]\n");
 
-    let list_output = facts_cmd(&dir)
-        .arg("list")
-        .output()
-        .unwrap();
+    let list_output = facts_cmd(&dir).arg("list").output().unwrap();
     let stdout = String::from_utf8_lossy(&list_output.stdout);
     let id = stdout
         .lines()
@@ -477,9 +438,7 @@ fn edit_unknown_id_errors() {
 
 #[test]
 fn lint_valid_file_passes() {
-    let dir = project(
-        "# project\n\n- a valid fact\n- label: mapping fact\n  command: echo ok\n",
-    );
+    let dir = project("# project\n\n- a valid fact\n- label: mapping fact\n  command: echo ok\n");
     facts_cmd(&dir)
         .arg("lint")
         .assert()
@@ -635,20 +594,19 @@ fn init_no_frameworks_scaffolds_minimal() {
 #[test]
 fn init_installs_skills() {
     let dir = empty_project();
-    facts_cmd(&dir)
-        .arg("init")
-        .assert()
-        .success();
+    facts_cmd(&dir).arg("init").assert().success();
 
     assert!(dir.path().join(".agents/skills/facts/SKILL.md").exists());
-    assert!(dir
-        .path()
-        .join(".agents/skills/facts-discover/SKILL.md")
-        .exists());
-    assert!(dir
-        .path()
-        .join(".agents/skills/facts-implement/SKILL.md")
-        .exists());
+    assert!(
+        dir.path()
+            .join(".agents/skills/facts-discover/SKILL.md")
+            .exists()
+    );
+    assert!(
+        dir.path()
+            .join(".agents/skills/facts-implement/SKILL.md")
+            .exists()
+    );
 }
 
 #[test]
@@ -861,10 +819,7 @@ fn multiple_files_listed() {
     let dir = project("- default fact\n");
     fs::write(dir.path().join("extra.facts"), "- extra fact\n").unwrap();
 
-    let output = facts_cmd(&dir)
-        .arg("list")
-        .output()
-        .unwrap();
+    let output = facts_cmd(&dir).arg("list").output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("default fact"));
     assert!(stdout.contains("extra fact"));
@@ -895,10 +850,7 @@ fn add_then_remove_roundtrip() {
         .success();
 
     // Get the ID
-    let list_output = facts_cmd(&dir)
-        .arg("list")
-        .output()
-        .unwrap();
+    let list_output = facts_cmd(&dir).arg("list").output().unwrap();
     let stdout = String::from_utf8_lossy(&list_output.stdout);
     let id = stdout
         .lines()
@@ -908,10 +860,7 @@ fn add_then_remove_roundtrip() {
         .next()
         .unwrap();
 
-    facts_cmd(&dir)
-        .args(["remove", id])
-        .assert()
-        .success();
+    facts_cmd(&dir).args(["remove", id]).assert().success();
 
     let content = fs::read_to_string(dir.path().join(".facts")).unwrap();
     assert!(!content.contains("ephemeral fact"));
@@ -940,9 +889,7 @@ fn list_with_explicit_id_fact() {
 
 #[test]
 fn list_tags_boolean_expression() {
-    let dir = project(
-        "- fact one @mvp @core\n- fact two @mvp\n- fact three @core\n",
-    );
+    let dir = project("- fact one @mvp @core\n- fact two @mvp\n- fact three @core\n");
     facts_cmd(&dir)
         .args(["list", "--tags", "mvp and core"])
         .assert()
@@ -957,10 +904,7 @@ fn check_mixed_pass_fail_manual() {
     let dir = project(
         "- label: good\n  command: \"true\"\n- label: bad\n  command: \"false\"\n- manual one\n",
     );
-    let output = facts_cmd(&dir)
-        .arg("check")
-        .output()
-        .unwrap();
+    let output = facts_cmd(&dir).arg("check").output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
 
     // Non-zero exit because of the failure
@@ -978,10 +922,7 @@ fn check_mixed_pass_fail_manual() {
 #[test]
 fn lint_empty_file_passes() {
     let dir = project("");
-    facts_cmd(&dir)
-        .arg("lint")
-        .assert()
-        .success();
+    facts_cmd(&dir).arg("lint").assert().success();
 }
 
 #[test]
@@ -1009,10 +950,7 @@ fn cross_file_ids_are_globally_unique() {
     fs::write(dir.path().join(".facts"), "- shared label\n").unwrap();
     fs::write(dir.path().join("other.facts"), "- shared label\n").unwrap();
 
-    let output = facts_cmd(&dir)
-        .arg("list")
-        .output()
-        .unwrap();
+    let output = facts_cmd(&dir).arg("list").output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
     let ids: Vec<&str> = stdout
         .lines()
@@ -1031,10 +969,7 @@ fn cross_file_ids_stable_with_file_filter() {
     fs::write(dir.path().join("other.facts"), "- unique fact beta\n").unwrap();
 
     // Get ID from unfiltered list
-    let full_output = facts_cmd(&dir)
-        .arg("list")
-        .output()
-        .unwrap();
+    let full_output = facts_cmd(&dir).arg("list").output().unwrap();
     let full_stdout = String::from_utf8_lossy(&full_output.stdout);
     let full_id = full_stdout
         .lines()
@@ -1071,17 +1006,10 @@ fn cross_file_list_id_matches_remove_id() {
     // The ID shown by `list` should work with `remove` even across multiple files
     let dir = empty_project();
     fs::write(dir.path().join(".facts"), "- fact in default\n").unwrap();
-    fs::write(
-        dir.path().join("other.facts"),
-        "- fact in other\n",
-    )
-    .unwrap();
+    fs::write(dir.path().join("other.facts"), "- fact in other\n").unwrap();
 
     // Get ID from list
-    let list_output = facts_cmd(&dir)
-        .arg("list")
-        .output()
-        .unwrap();
+    let list_output = facts_cmd(&dir).arg("list").output().unwrap();
     let stdout = String::from_utf8_lossy(&list_output.stdout);
     let id = stdout
         .lines()
@@ -1123,10 +1051,7 @@ fn empty_facts_file_list() {
 #[test]
 fn empty_facts_file_check() {
     let dir = project("");
-    facts_cmd(&dir)
-        .arg("check")
-        .assert()
-        .success();
+    facts_cmd(&dir).arg("check").assert().success();
 }
 
 #[test]
@@ -1152,10 +1077,7 @@ fn headings_only_no_facts() {
 #[test]
 fn headings_only_check() {
     let dir = project("# section one\n\n## subsection\n");
-    facts_cmd(&dir)
-        .arg("check")
-        .assert()
-        .success();
+    facts_cmd(&dir).arg("check").assert().success();
 }
 
 #[test]
@@ -1174,9 +1096,7 @@ fn headings_only_lint() {
 
 #[test]
 fn deeply_nested_section_list() {
-    let dir = project(
-        "# level1\n\n## level2\n\n### level3\n\n#### level4\n\n- deep fact\n",
-    );
+    let dir = project("# level1\n\n## level2\n\n### level3\n\n#### level4\n\n- deep fact\n");
     facts_cmd(&dir)
         .arg("list")
         .assert()
@@ -1190,9 +1110,7 @@ fn deeply_nested_section_list() {
 
 #[test]
 fn deeply_nested_section_check() {
-    let dir = project(
-        "# l1\n\n## l2\n\n### l3\n\n- label: deep cmd\n  command: \"true\"\n",
-    );
+    let dir = project("# l1\n\n## l2\n\n### l3\n\n- label: deep cmd\n  command: \"true\"\n");
     facts_cmd(&dir)
         .arg("check")
         .assert()
@@ -1305,9 +1223,7 @@ fn lint_aggregates_across_files() {
 
 #[test]
 fn tags_complex_boolean_or_and_not() {
-    let dir = project(
-        "- fact a @mvp @core\n- fact b @mvp\n- fact c @core\n- fact d @blocked\n",
-    );
+    let dir = project("- fact a @mvp @core\n- fact b @mvp\n- fact c @core\n- fact d @blocked\n");
     // (mvp or core) and not blocked
     facts_cmd(&dir)
         .args(["list", "--tags", "(mvp or core) and not blocked"])
@@ -1333,9 +1249,7 @@ fn tags_double_not() {
 
 #[test]
 fn tags_nested_parens() {
-    let dir = project(
-        "- fact a @x @y\n- fact b @x @z\n- fact c @y @z\n",
-    );
+    let dir = project("- fact a @x @y\n- fact b @x @z\n- fact c @y @z\n");
     // x and (y or z) — should match a (x+y), b (x+z), but not c (no x)
     facts_cmd(&dir)
         .args(["list", "--tags", "x and (y or z)"])
@@ -1353,9 +1267,8 @@ fn tags_nested_parens() {
 #[test]
 fn section_filter_exact_match_includes_subsections() {
     // --section "cli" should match "cli" and "cli/check" but not "cli_tools"
-    let dir = project(
-        "# cli\n\n- cli fact\n\n## check\n\n- check fact\n\n# cli_tools\n\n- tools fact\n",
-    );
+    let dir =
+        project("# cli\n\n- cli fact\n\n## check\n\n- check fact\n\n# cli_tools\n\n- tools fact\n");
     facts_cmd(&dir)
         .args(["list", "--section", "cli"])
         .assert()
@@ -1368,9 +1281,7 @@ fn section_filter_exact_match_includes_subsections() {
 #[test]
 fn section_filter_does_not_substring_match() {
     // --section "cli" must NOT match "cli_tools" (substring match would)
-    let dir = project(
-        "# cli_tools\n\n- tools fact\n\n# cli\n\n- cli fact\n",
-    );
+    let dir = project("# cli_tools\n\n- tools fact\n\n# cli\n\n- cli fact\n");
     facts_cmd(&dir)
         .args(["list", "--section", "cli"])
         .assert()
@@ -1456,13 +1367,16 @@ fn list_aggregates_from_both_files() {
     let dir = project("- default fact\n");
     fs::write(dir.path().join("cli.facts"), "- cli fact\n").unwrap();
 
-    let output = facts_cmd(&dir)
-        .arg("list")
-        .output()
-        .unwrap();
+    let output = facts_cmd(&dir).arg("list").output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("default fact"), "should list fact from .facts");
-    assert!(stdout.contains("cli fact"), "should list fact from cli.facts");
+    assert!(
+        stdout.contains("default fact"),
+        "should list fact from .facts"
+    );
+    assert!(
+        stdout.contains("cli fact"),
+        "should list fact from cli.facts"
+    );
 }
 
 #[test]
@@ -1470,10 +1384,7 @@ fn list_shows_file_prefix_for_cli_facts_not_for_default() {
     let dir = project("- default fact\n");
     fs::write(dir.path().join("cli.facts"), "- cli fact\n").unwrap();
 
-    let output = facts_cmd(&dir)
-        .arg("list")
-        .output()
-        .unwrap();
+    let output = facts_cmd(&dir).arg("list").output().unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);
 
     // The line with "cli fact" should have "cli.facts" prefix
@@ -1600,7 +1511,10 @@ fn cross_file_same_label_different_ids() {
         .map(|l| l.split_whitespace().next().unwrap())
         .collect();
     assert_eq!(ids.len(), 2);
-    assert_ne!(ids[0], ids[1], "same label in different files should get different IDs");
+    assert_ne!(
+        ids[0], ids[1],
+        "same label in different files should get different IDs"
+    );
 }
 
 // ===========================================================================
@@ -1735,7 +1649,10 @@ fn same_label_different_tags_same_id() {
     // Same label "unique label" (tags stripped) → same hash → collision resolution
     // Both should be present but with different IDs due to collision handling
     assert_eq!(ids.len(), 2, "both facts should be listed");
-    assert_ne!(ids[0], ids[1], "collision resolution should make them unique");
+    assert_ne!(
+        ids[0], ids[1],
+        "collision resolution should make them unique"
+    );
     // But importantly, the base hash is the same (they collided because tags
     // were stripped from the label before hashing)
 }
@@ -1746,9 +1663,7 @@ fn same_label_different_tags_same_id() {
 
 #[test]
 fn tags_filter_implemented() {
-    let dir = project(
-        "- done feature @implemented\n- pending feature\n- also done @implemented\n",
-    );
+    let dir = project("- done feature @implemented\n- pending feature\n- also done @implemented\n");
 
     // Filter for implemented facts
     facts_cmd(&dir)
@@ -1762,9 +1677,7 @@ fn tags_filter_implemented() {
 
 #[test]
 fn tags_filter_not_implemented() {
-    let dir = project(
-        "- done feature @implemented\n- pending feature\n- also done @implemented\n",
-    );
+    let dir = project("- done feature @implemented\n- pending feature\n- also done @implemented\n");
 
     // Filter for NOT implemented facts
     facts_cmd(&dir)
@@ -1802,10 +1715,7 @@ fn check_with_tags_filter_only_runs_matched() {
     );
 
     // Without --tags, the failing command causes failure
-    facts_cmd(&dir)
-        .arg("check")
-        .assert()
-        .failure();
+    facts_cmd(&dir).arg("check").assert().failure();
 
     // With --tags "implemented", only the passing command runs
     facts_cmd(&dir)
@@ -1992,10 +1902,7 @@ fn add_rejects_label_with_newline() {
 fn edit_rejects_label_with_newline() {
     let dir = project("- original fact\n");
     // Get the ID of the fact
-    let list_output = facts_cmd(&dir)
-        .arg("list")
-        .output()
-        .unwrap();
+    let list_output = facts_cmd(&dir).arg("list").output().unwrap();
     let stdout = String::from_utf8_lossy(&list_output.stdout);
     let id = stdout
         .lines()
@@ -2024,7 +1931,9 @@ fn add_rejects_section_with_leading_slash() {
         .args(["add", "test", "--section", "/a/b"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("section path cannot contain empty components"));
+        .stderr(predicate::str::contains(
+            "section path cannot contain empty components",
+        ));
 }
 
 #[test]
@@ -2034,7 +1943,9 @@ fn add_rejects_empty_section_path() {
         .args(["add", "test", "--section", ""])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("section path cannot contain empty components"));
+        .stderr(predicate::str::contains(
+            "section path cannot contain empty components",
+        ));
 }
 
 #[test]
@@ -2044,7 +1955,9 @@ fn add_rejects_section_with_trailing_slash() {
         .args(["add", "test", "--section", "a/b/"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("section path cannot contain empty components"));
+        .stderr(predicate::str::contains(
+            "section path cannot contain empty components",
+        ));
 }
 
 #[test]
@@ -2054,7 +1967,9 @@ fn add_rejects_section_with_double_slash() {
         .args(["add", "test", "--section", "a//b"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("section path cannot contain empty components"));
+        .stderr(predicate::str::contains(
+            "section path cannot contain empty components",
+        ));
 }
 
 // ===========================================================================
@@ -2068,7 +1983,9 @@ fn add_rejects_absolute_file_path() {
         .args(["add", "test", "--file", "/tmp/outside.facts"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("file path must be relative, not absolute"));
+        .stderr(predicate::str::contains(
+            "file path must be relative, not absolute",
+        ));
 }
 
 #[test]
@@ -2107,10 +2024,7 @@ fn add_label_starting_with_command_roundtrips() {
         .success();
 
     // Verify lint passes (file is not corrupted)
-    facts_cmd(&dir)
-        .arg("lint")
-        .assert()
-        .success();
+    facts_cmd(&dir).arg("lint").assert().success();
 
     // Verify the full label is preserved on list
     facts_cmd(&dir)
@@ -2130,10 +2044,7 @@ fn add_label_starting_with_label_roundtrips() {
         .success();
 
     // Verify lint passes
-    facts_cmd(&dir)
-        .arg("lint")
-        .assert()
-        .success();
+    facts_cmd(&dir).arg("lint").assert().success();
 
     // Verify the full label is preserved (not silently truncated)
     facts_cmd(&dir)
@@ -2151,10 +2062,7 @@ fn add_label_starting_with_id_roundtrips() {
         .assert()
         .success();
 
-    facts_cmd(&dir)
-        .arg("lint")
-        .assert()
-        .success();
+    facts_cmd(&dir).arg("lint").assert().success();
 
     facts_cmd(&dir)
         .arg("list")
@@ -2171,10 +2079,7 @@ fn add_label_starting_with_tags_roundtrips() {
         .assert()
         .success();
 
-    facts_cmd(&dir)
-        .arg("lint")
-        .assert()
-        .success();
+    facts_cmd(&dir).arg("lint").assert().success();
 
     facts_cmd(&dir)
         .arg("list")
@@ -2254,10 +2159,7 @@ fn add_rejects_whitespace_only_label() {
 #[test]
 fn edit_rejects_empty_label() {
     let dir = project("- original fact\n");
-    let list_output = facts_cmd(&dir)
-        .arg("list")
-        .output()
-        .unwrap();
+    let list_output = facts_cmd(&dir).arg("list").output().unwrap();
     let stdout = String::from_utf8_lossy(&list_output.stdout);
     let id = stdout
         .lines()
@@ -2381,8 +2283,14 @@ fn add_trims_section_path_components() {
         .assert()
         .success();
     let content = fs::read_to_string(dir.path().join(".facts")).unwrap();
-    assert!(content.contains("# a\n"), "expected trimmed '# a' heading, got:\n{content}");
-    assert!(content.contains("## b\n"), "expected trimmed '## b' heading, got:\n{content}");
+    assert!(
+        content.contains("# a\n"),
+        "expected trimmed '# a' heading, got:\n{content}"
+    );
+    assert!(
+        content.contains("## b\n"),
+        "expected trimmed '## b' heading, got:\n{content}"
+    );
 }
 
 #[test]
@@ -2492,7 +2400,9 @@ fn add_rejects_section_depth_7() {
         .args(["add", "too deep", "--section", "a/b/c/d/e/f/g"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("section path too deep (max 6 levels)"));
+        .stderr(predicate::str::contains(
+            "section path too deep (max 6 levels)",
+        ));
 }
 
 // ===========================================================================
@@ -2703,11 +2613,7 @@ fn lint_warns_duplicate_id_across_files() {
     let dir = empty_project();
 
     // Create two .facts files each with the same explicit ID
-    fs::write(
-        dir.path().join(".facts"),
-        "- label: fact one\n  id: dupe\n",
-    )
-    .unwrap();
+    fs::write(dir.path().join(".facts"), "- label: fact one\n  id: dupe\n").unwrap();
     fs::write(
         dir.path().join("extra.facts"),
         "- label: fact two\n  id: dupe\n",
@@ -2846,7 +2752,8 @@ fn parse_handles_utf8_bom() {
 
 #[test]
 fn lint_warns_unknown_continuation_line() {
-    let dir = project("- label: test fact\n  this content is silently dropped\n  command: echo hi\n");
+    let dir =
+        project("- label: test fact\n  this content is silently dropped\n  command: echo hi\n");
     // Unrecognized continuation is a warning, not an error -- should still pass (exit 0)
     facts_cmd(&dir)
         .arg("lint")
@@ -2891,7 +2798,10 @@ fn add_deduplicates_inline_and_flag_tags() {
     );
     // Count occurrences of "@mvp" -- must be exactly 1.
     let count = content.matches("@mvp").count();
-    assert_eq!(count, 1, "expected exactly 1 @mvp, got {count} in: {content}");
+    assert_eq!(
+        count, 1,
+        "expected exactly 1 @mvp, got {count} in: {content}"
+    );
 }
 
 #[test]
@@ -2917,7 +2827,10 @@ fn edit_add_tag_deduplicates_inline() {
 
     let content = fs::read_to_string(dir.path().join(".facts")).unwrap();
     let count = content.matches("@mvp").count();
-    assert_eq!(count, 1, "expected exactly 1 @mvp, got {count} in: {content}");
+    assert_eq!(
+        count, 1,
+        "expected exactly 1 @mvp, got {count} in: {content}"
+    );
 }
 
 // ===========================================================================
@@ -2932,7 +2845,9 @@ fn add_rejects_tag_named_not() {
         .args(["add", "test fact", "--tags", "not"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("tag name conflicts with filter operator: not"));
+        .stderr(predicate::str::contains(
+            "tag name conflicts with filter operator: not",
+        ));
 }
 
 #[test]
@@ -2943,7 +2858,9 @@ fn add_rejects_tag_named_and() {
         .args(["add", "test fact", "--tags", "and"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("tag name conflicts with filter operator: and"));
+        .stderr(predicate::str::contains(
+            "tag name conflicts with filter operator: and",
+        ));
 }
 
 #[test]
@@ -2954,7 +2871,9 @@ fn add_rejects_tag_named_or() {
         .args(["add", "test fact", "--tags", "or"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("tag name conflicts with filter operator: or"));
+        .stderr(predicate::str::contains(
+            "tag name conflicts with filter operator: or",
+        ));
 }
 
 // ===========================================================================

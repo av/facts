@@ -2,7 +2,6 @@
 ///
 /// Supports: tag names, `and`, `or`, `not`, and parentheses.
 /// Example: "mvp and not blocked"
-
 /// Validate a tag expression, returning an error if it is malformed.
 /// Call this once before the main loop to fail early on bad expressions.
 pub fn validate_tag_expr(expr: &str) -> Result<(), String> {
@@ -73,7 +72,7 @@ fn tokenize(input: &str) -> Vec<String> {
     tokens
 }
 
-fn parse_or<'a>(tokens: &'a [String]) -> Result<(Expr, &'a [String]), String> {
+fn parse_or(tokens: &[String]) -> Result<(Expr, &[String]), String> {
     let (mut left, mut rest) = parse_and(tokens)?;
     while !rest.is_empty() && rest[0] == "or" {
         let (right, new_rest) = parse_and(&rest[1..])?;
@@ -83,7 +82,7 @@ fn parse_or<'a>(tokens: &'a [String]) -> Result<(Expr, &'a [String]), String> {
     Ok((left, rest))
 }
 
-fn parse_and<'a>(tokens: &'a [String]) -> Result<(Expr, &'a [String]), String> {
+fn parse_and(tokens: &[String]) -> Result<(Expr, &[String]), String> {
     let (mut left, mut rest) = parse_not(tokens)?;
     while !rest.is_empty() && rest[0] == "and" {
         let (right, new_rest) = parse_not(&rest[1..])?;
@@ -93,7 +92,7 @@ fn parse_and<'a>(tokens: &'a [String]) -> Result<(Expr, &'a [String]), String> {
     Ok((left, rest))
 }
 
-fn parse_not<'a>(tokens: &'a [String]) -> Result<(Expr, &'a [String]), String> {
+fn parse_not(tokens: &[String]) -> Result<(Expr, &[String]), String> {
     if tokens.is_empty() {
         return Err("unexpected end of expression".to_string());
     }
@@ -104,7 +103,7 @@ fn parse_not<'a>(tokens: &'a [String]) -> Result<(Expr, &'a [String]), String> {
     parse_primary(tokens)
 }
 
-fn parse_primary<'a>(tokens: &'a [String]) -> Result<(Expr, &'a [String]), String> {
+fn parse_primary(tokens: &[String]) -> Result<(Expr, &[String]), String> {
     if tokens.is_empty() {
         return Err("unexpected end of expression".to_string());
     }
@@ -145,10 +144,7 @@ mod tests {
 
     #[test]
     fn test_or() {
-        assert!(matches_tag_expr(
-            "mvp or blocked",
-            &tags(&["mvp", "core"])
-        ));
+        assert!(matches_tag_expr("mvp or blocked", &tags(&["mvp", "core"])));
         assert!(!matches_tag_expr(
             "blocked or deferred",
             &tags(&["mvp", "core"])
@@ -161,10 +157,7 @@ mod tests {
             "mvp and not blocked",
             &tags(&["mvp", "core"])
         ));
-        assert!(!matches_tag_expr(
-            "not mvp",
-            &tags(&["mvp", "core"])
-        ));
+        assert!(!matches_tag_expr("not mvp", &tags(&["mvp", "core"])));
     }
 
     #[test]
@@ -178,18 +171,9 @@ mod tests {
     #[test]
     fn test_complex_expression() {
         // (a or b) and not c
-        assert!(matches_tag_expr(
-            "(a or b) and not c",
-            &tags(&["a", "d"])
-        ));
-        assert!(!matches_tag_expr(
-            "(a or b) and not c",
-            &tags(&["a", "c"])
-        ));
-        assert!(!matches_tag_expr(
-            "(a or b) and not c",
-            &tags(&["d"])
-        ));
+        assert!(matches_tag_expr("(a or b) and not c", &tags(&["a", "d"])));
+        assert!(!matches_tag_expr("(a or b) and not c", &tags(&["a", "c"])));
+        assert!(!matches_tag_expr("(a or b) and not c", &tags(&["d"])));
     }
 
     #[test]

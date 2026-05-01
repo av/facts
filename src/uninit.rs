@@ -3,8 +3,7 @@
 /// Removes the default `.facts` file, agent skills from `.agents/skills/`,
 /// and Claude symlinks from `.claude/skills/`. Idempotent: safe to run on
 /// projects that were never initialized.
-
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use std::path::Path;
 
 use crate::project;
@@ -69,10 +68,10 @@ fn remove_claude_link(root: &Path, name: &str) -> Result<()> {
 }
 
 fn remove_dir_if_empty(path: &Path) {
-    if let Ok(mut entries) = std::fs::read_dir(path) {
-        if entries.next().is_none() {
-            let _ = std::fs::remove_dir(path);
-        }
+    if let Ok(mut entries) = std::fs::read_dir(path)
+        && entries.next().is_none()
+    {
+        let _ = std::fs::remove_dir(path);
     }
 }
 
@@ -101,14 +100,16 @@ mod tests {
 
         assert!(!dir.path().join(".facts").exists());
         assert!(!dir.path().join(".agents/skills/facts/SKILL.md").exists());
-        assert!(!dir
-            .path()
-            .join(".agents/skills/facts-discover/SKILL.md")
-            .exists());
-        assert!(!dir
-            .path()
-            .join(".agents/skills/facts-implement/SKILL.md")
-            .exists());
+        assert!(
+            !dir.path()
+                .join(".agents/skills/facts-discover/SKILL.md")
+                .exists()
+        );
+        assert!(
+            !dir.path()
+                .join(".agents/skills/facts-implement/SKILL.md")
+                .exists()
+        );
     }
 
     #[test]
@@ -159,10 +160,7 @@ mod tests {
 
         run_in(dir.path(), true).unwrap();
 
-        assert!(!dir
-            .path()
-            .join(".agents/skills/facts/SKILL.md")
-            .exists());
+        assert!(!dir.path().join(".agents/skills/facts/SKILL.md").exists());
         assert!(other.exists());
         assert!(dir.path().join(".agents/skills").exists());
     }

@@ -1,5 +1,4 @@
 /// The `edit` subcommand — modify a fact by ID.
-
 use std::path::Path;
 
 use anyhow::{Context, Result};
@@ -48,21 +47,18 @@ pub fn run_in(opts: &EditOptions, root: &Path) -> Result<()> {
         }
     }
 
-    // Reject empty or whitespace-only command strings.
-    if let Some(ref cmd) = opts.command {
-        if cmd.trim().is_empty() {
-            anyhow::bail!("command cannot be empty");
-        }
+    if let Some(ref cmd) = opts.command
+        && cmd.trim().is_empty()
+    {
+        anyhow::bail!("command cannot be empty");
     }
 
-    // Reject empty or whitespace-only new IDs.
-    if let Some(ref new_id) = opts.new_id {
-        if new_id.trim().is_empty() {
-            anyhow::bail!("ID cannot be empty");
-        }
+    if let Some(ref new_id) = opts.new_id
+        && new_id.trim().is_empty()
+    {
+        anyhow::bail!("ID cannot be empty");
     }
 
-    // Acquire advisory lock to prevent concurrent modifications.
     let _lock = FileLock::acquire(root)?;
 
     let files = project::discover_fact_files(root)?;
@@ -71,7 +67,6 @@ pub fn run_in(opts: &EditOptions, root: &Path) -> Result<()> {
         anyhow::bail!("no .facts files found in {}", root.display());
     }
 
-    // Parse all sheets
     let mut sheets: Vec<(std::path::PathBuf, FactSheet)> = Vec::new();
     for path in &files {
         let content = std::fs::read_to_string(path)
@@ -85,7 +80,6 @@ pub fn run_in(opts: &EditOptions, root: &Path) -> Result<()> {
         sheets.push((path.clone(), sheet));
     }
 
-    // Collect all fact labels for ID assignment
     let mut all_fact_labels: Vec<(String, Option<String>)> = Vec::new();
     let mut fact_locations: Vec<(usize, FactLocation)> = Vec::new();
 
@@ -105,7 +99,6 @@ pub fn run_in(opts: &EditOptions, root: &Path) -> Result<()> {
 
     let assigned_ids = id::assign_ids(&all_fact_labels);
 
-    // Find the fact matching the target ID
     let match_idx = assigned_ids
         .iter()
         .position(|id| *id == opts.target_id)
@@ -115,10 +108,8 @@ pub fn run_in(opts: &EditOptions, root: &Path) -> Result<()> {
     // among OTHER facts (not the one being edited).
     if let Some(ref new_id) = opts.new_id {
         for (i, (_, explicit_id)) in all_fact_labels.iter().enumerate() {
-            if i != match_idx {
-                if explicit_id.as_deref() == Some(new_id.as_str()) {
-                    anyhow::bail!("ID already exists: {}", new_id);
-                }
+            if i != match_idx && explicit_id.as_deref() == Some(new_id.as_str()) {
+                anyhow::bail!("ID already exists: {}", new_id);
             }
         }
     }
@@ -126,15 +117,12 @@ pub fn run_in(opts: &EditOptions, root: &Path) -> Result<()> {
     let (sheet_idx, ref location) = fact_locations[match_idx];
     let (ref file_path, ref mut sheet) = sheets[sheet_idx];
 
-    // Get the fact and apply edits
     let fact = locate::get_fact_mut(sheet, location);
     apply_edits(fact, opts);
 
-    // Regenerate raw representation
     let fact = locate::get_fact_mut(sheet, location);
     fact.raw = writer::fact_to_raw(fact);
 
-    // Write back
     let output = writer::write(sheet);
     std::fs::write(file_path, &output)
         .with_context(|| format!("failed to write {}", file_path.display()))?;
@@ -144,11 +132,9 @@ pub fn run_in(opts: &EditOptions, root: &Path) -> Result<()> {
 
 /// Apply edits to a fact based on the options.
 fn apply_edits(fact: &mut Fact, opts: &EditOptions) {
-    // Track the original explicit_id to preserve it
     let original_explicit_id = fact.explicit_id.clone();
 
     if let Some(ref new_label) = opts.label {
-        // Extract inline tags from the new label so they merge into fact.tags.
         let (clean_label, inline_tags) = crate::parser::extract_inline_tags(new_label);
         fact.label = clean_label;
         for t in inline_tags {
@@ -185,14 +171,11 @@ fn apply_edits(fact: &mut Fact, opts: &EditOptions) {
         fact.tags.retain(|t| !tags_to_remove.contains(t));
     }
 
-    // Promote plain string to mapping if it now has command or explicit ID.
     // Tags alone do NOT promote — they stay inline as @tag for plain facts.
     if fact.is_plain {
         let needs_mapping = fact.command.is_some() || fact.explicit_id.is_some();
         if needs_mapping {
             fact.is_plain = false;
-            // Tags migrate from inline to tags key when fact becomes a mapping
-            // (this is handled by fact_to_raw which uses tags key for mappings)
         }
     }
 }

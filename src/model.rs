@@ -1,5 +1,4 @@
 /// Core data model for fact sheets.
-
 /// A parsed .facts file.
 #[derive(Debug, Clone)]
 pub struct FactSheet {
