@@ -1450,6 +1450,62 @@ fn section_filter_case_insensitive_nested() {
         .stdout(predicate::str::contains("route fact").not());
 }
 
+#[test]
+fn section_filter_matches_at_any_depth() {
+    // --section "init" should match "cli > init" even without the "cli/" prefix
+    let dir = project(
+        "# cli\n\n- cli fact\n\n## init\n\n- init fact\n\n## check\n\n- check fact\n",
+    );
+    facts_cmd(&dir)
+        .args(["list", "--section", "init"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("init fact"))
+        .stdout(predicate::str::contains("cli fact").not())
+        .stdout(predicate::str::contains("check fact").not());
+}
+
+#[test]
+fn section_filter_deep_match_includes_children() {
+    // --section "check" at any depth should still include children of the matched section
+    let dir = project(
+        "# cli\n\n## check\n\n- check fact\n\n### output\n\n- output fact\n\n## list\n\n- list fact\n",
+    );
+    facts_cmd(&dir)
+        .args(["list", "--section", "check"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("check fact"))
+        .stdout(predicate::str::contains("output fact"))
+        .stdout(predicate::str::contains("list fact").not());
+}
+
+#[test]
+fn section_filter_deep_match_no_substring() {
+    // --section "cli" must NOT match "cli_tools" even when matching at any depth
+    let dir = project("# project\n\n## cli_tools\n\n- tools fact\n\n## cli\n\n- cli fact\n");
+    facts_cmd(&dir)
+        .args(["list", "--section", "cli"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("cli fact"))
+        .stdout(predicate::str::contains("tools fact").not());
+}
+
+#[test]
+fn section_filter_partial_path_at_any_depth() {
+    // --section "cli/init" should match at any depth (e.g. "project > cli > init")
+    let dir = project(
+        "# project\n\n## cli\n\n### init\n\n- init fact\n\n### check\n\n- check fact\n",
+    );
+    facts_cmd(&dir)
+        .args(["list", "--section", "cli/init"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("init fact"))
+        .stdout(predicate::str::contains("check fact").not());
+}
+
 // ===========================================================================
 // Multi-file scenarios
 // ===========================================================================

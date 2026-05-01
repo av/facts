@@ -80,12 +80,7 @@ pub fn run(opts: &ListOptions) -> Result<()> {
             // with `add --section` which uses eq_ignore_ascii_case).
             // --section "cli" matches "cli", "Cli", "cli/check", etc. but NOT "cli_tools".
             if let Some(ref section) = opts.section_filter {
-                let path_str = path.join("/");
-                let matches = path_str.eq_ignore_ascii_case(section)
-                    || (path_str.len() > section.len()
-                        && path_str[..section.len()].eq_ignore_ascii_case(section)
-                        && path_str.as_bytes()[section.len()] == b'/');
-                if !matches {
+                if !section_matches(&path.join("/"), section) {
                     continue;
                 }
             }
@@ -110,6 +105,40 @@ pub fn run(opts: &ListOptions) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Match a section filter against a path at any depth.
+///
+/// The filter is split by `/` into segments and matched as a contiguous
+/// sub-path of the full section path. Children of matched sections are
+/// included. Matching is case-insensitive.
+///
+/// Examples (path = "facts/cli/init"):
+///   "init"       -> true  (single segment, found at depth 2)
+///   "cli/init"   -> true  (two segments, found at depth 1-2)
+///   "facts/cli"  -> true  (prefix match, also matches children)
+///   "cli"        -> true  (matches cli and all children like cli/init)
+///   "check"      -> false (not in this path)
+///   "cli_tools"  -> false (must be exact segment match)
+fn section_matches(path_str: &str, filter: &str) -> bool {
+    let path_parts: Vec<&str> = path_str.split('/').collect();
+    let filter_parts: Vec<&str> = filter.split('/').collect();
+
+    if filter_parts.is_empty() || filter_parts.len() > path_parts.len() {
+        return false;
+    }
+
+    for start in 0..=path_parts.len() - filter_parts.len() {
+        if filter_parts
+            .iter()
+            .zip(&path_parts[start..])
+            .all(|(f, p)| f.eq_ignore_ascii_case(p))
+        {
+            return true;
+        }
+    }
+
+    false
 }
 
 /// Format a single fact line for display with color.
@@ -142,5 +171,59 @@ fn format_fact_line(
             .collect::<Vec<_>>()
             .join(&format!(" {dim_sep} "));
         format!("{dim_id}  {colored_path} {dim_sep} {label}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_section_matches_exact() {
+        assert!(section_matches("cli", "cli"));
+        assert!(section_matches("cli/check", "cli/check"));
+    }
+
+    #[test]
+    fn test_section_matches_prefix_includes_children() {
+        assert!(section_matches("cli/check", "cli"));
+        assert!(section_matches("cli/check/output", "cli"));
+        assert!(section_matches("cli/check/output", "cli/check"));
+    }
+
+    #[test]
+    fn test_section_matches_any_depth() {
+        assert!(section_matches("facts/cli/init", "init"));
+        assert!(section_matches("facts/cli/init", "cli/init"));
+        assert!(section_matches("facts/cli/init", "cli"));
+        assert!(section_matches("facts/skills/facts-discover", "skills"));
+        assert!(section_matches("facts/skills/facts-discover", "facts-discover"));
+    }
+
+    #[test]
+    fn test_section_matches_children_from_any_depth() {
+        assert!(section_matches("facts/cli/init/extra", "init"));
+        assert!(section_matches("facts/cli/init/extra", "cli/init"));
+    }
+
+    #[test]
+    fn test_section_matches_case_insensitive() {
+        assert!(section_matches("Api/Auth", "api/auth"));
+        assert!(section_matches("facts/CLI/Init", "cli"));
+        assert!(section_matches("facts/CLI/Init", "init"));
+    }
+
+    #[test]
+    fn test_section_matches_no_substring() {
+        assert!(!section_matches("cli_tools", "cli"));
+        assert!(!section_matches("facts/cli_tools", "cli"));
+        assert!(!section_matches("precli/check", "cli"));
+    }
+
+    #[test]
+    fn test_section_matches_no_match() {
+        assert!(!section_matches("facts/cli/init", "check"));
+        assert!(!section_matches("facts/cli/init", "api"));
+        assert!(!section_matches("cli", "cli/check"));
     }
 }
