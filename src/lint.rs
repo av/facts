@@ -62,6 +62,10 @@ pub fn run(opts: &LintOptions) -> Result<bool> {
         all_diagnostics.append(&mut diags);
     }
 
+    // Cross-file duplicate ID check: collect all explicit IDs from all
+    // successfully parsed files and warn if any ID appears in more than one.
+    check_cross_file_duplicate_ids(&files, &mut all_diagnostics)?;
+
     if all_diagnostics.is_empty() {
         let count = files.len();
         let plural = if count == 1 { "" } else { "s" };
@@ -284,6 +288,61 @@ fn check_duplicate_ids(sheet: &FactSheet, filename: &str, diagnostics: &mut Vec<
             });
         }
     }
+}
+
+/// Check for duplicate explicit IDs across multiple files.
+///
+/// Called from `run` after per-file linting to detect IDs that are unique
+/// within their own file but duplicated across different files.
+fn check_cross_file_duplicate_ids(
+    files: &[PathBuf],
+    diagnostics: &mut Vec<LintDiagnostic>,
+) -> Result<()> {
+    // Map from ID -> list of filenames where it appears
+    let mut id_to_files: HashMap<String, Vec<String>> = HashMap::new();
+
+    for path in files {
+        let content = std::fs::read_to_string(path)
+            .with_context(|| format!("failed to read {}", path.display()))?;
+        let filename = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(".facts")
+            .to_string();
+
+        if let Ok(sheet) = parser::parse(&content, &filename) {
+            for (_path, fact) in sheet.all_facts() {
+                if let Some(ref id) = fact.explicit_id {
+                    id_to_files
+                        .entry(id.clone())
+                        .or_default()
+                        .push(filename.clone());
+                }
+            }
+        }
+    }
+
+    for (id, file_list) in &id_to_files {
+        // Deduplicate file names (an ID might appear multiple times in the
+        // same file, but that's caught by the per-file check).
+        let mut unique_files: Vec<&str> = file_list.iter().map(|s| s.as_str()).collect();
+        unique_files.sort();
+        unique_files.dedup();
+        if unique_files.len() > 1 {
+            diagnostics.push(LintDiagnostic {
+                file: unique_files.join(", "),
+                line: None,
+                message: format!(
+                    "duplicate explicit id '{}' appears across files: {}",
+                    id,
+                    unique_files.join(", ")
+                ),
+                severity: Severity::Warning,
+            });
+        }
+    }
+
+    Ok(())
 }
 
 /// Check for invalid mapping keys.

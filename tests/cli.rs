@@ -2494,3 +2494,217 @@ fn add_rejects_section_depth_7() {
         .failure()
         .stderr(predicate::str::contains("section path too deep (max 6 levels)"));
 }
+
+// ===========================================================================
+// ISSUE-025: computed ID collision with explicit ID
+// ===========================================================================
+
+#[test]
+fn computed_id_extended_when_colliding_with_explicit_id() {
+    // Step 1: Add a fact and discover its computed 3-char ID.
+    let dir = project("");
+    facts_cmd(&dir)
+        .args(["add", "alpha fact"])
+        .assert()
+        .success();
+
+    let list_out = facts_cmd(&dir).arg("list").output().unwrap();
+    let stdout = String::from_utf8_lossy(&list_out.stdout);
+    let computed_id: String = stdout
+        .lines()
+        .find(|l| l.contains("alpha fact"))
+        .expect("alpha fact should appear in list")
+        .split_whitespace()
+        .next()
+        .unwrap()
+        .to_string();
+
+    // Step 2: Add a second fact with an explicit ID equal to the first fact's
+    // computed ID. This creates a collision that the ID assigner must resolve.
+    facts_cmd(&dir)
+        .args(["add", "beta fact", "--id", &computed_id])
+        .assert()
+        .success();
+
+    // Step 3: List should show both facts with DIFFERENT IDs.
+    let list_out2 = facts_cmd(&dir).arg("list").output().unwrap();
+    let stdout2 = String::from_utf8_lossy(&list_out2.stdout);
+
+    let alpha_id = stdout2
+        .lines()
+        .find(|l| l.contains("alpha fact"))
+        .expect("alpha fact should still appear")
+        .split_whitespace()
+        .next()
+        .unwrap();
+    let beta_id = stdout2
+        .lines()
+        .find(|l| l.contains("beta fact"))
+        .expect("beta fact should appear")
+        .split_whitespace()
+        .next()
+        .unwrap();
+
+    assert_ne!(
+        alpha_id, beta_id,
+        "computed and explicit IDs must not collide: both are '{alpha_id}'"
+    );
+    // The explicit ID should be preserved as-is.
+    assert_eq!(beta_id, computed_id, "explicit ID must be preserved");
+    // The computed ID should have been extended (longer than 3 chars).
+    assert!(
+        alpha_id.len() > computed_id.len(),
+        "computed ID '{alpha_id}' should be longer than original '{computed_id}'"
+    );
+}
+
+#[test]
+fn explicit_id_collision_resolved_facts_remain_addressable() {
+    // After collision resolution, both facts should be individually addressable
+    // by their (now-unique) IDs for edit/remove operations.
+    let dir = project("");
+    facts_cmd(&dir)
+        .args(["add", "first fact"])
+        .assert()
+        .success();
+
+    let list_out = facts_cmd(&dir).arg("list").output().unwrap();
+    let stdout = String::from_utf8_lossy(&list_out.stdout);
+    let computed_id: String = stdout
+        .lines()
+        .find(|l| l.contains("first fact"))
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap()
+        .to_string();
+
+    // Add second fact with explicit ID matching the first's computed ID.
+    facts_cmd(&dir)
+        .args(["add", "second fact", "--id", &computed_id])
+        .assert()
+        .success();
+
+    // Get the extended ID for the first fact.
+    let list_out2 = facts_cmd(&dir).arg("list").output().unwrap();
+    let stdout2 = String::from_utf8_lossy(&list_out2.stdout);
+    let extended_id: String = stdout2
+        .lines()
+        .find(|l| l.contains("first fact"))
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap()
+        .to_string();
+
+    // Remove the first fact using its extended ID — should succeed.
+    facts_cmd(&dir)
+        .args(["remove", &extended_id])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("first fact"));
+
+    // The second fact should still be listed with its explicit ID.
+    facts_cmd(&dir)
+        .arg("list")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(&computed_id))
+        .stdout(predicate::str::contains("second fact"));
+}
+
+// ===========================================================================
+// ISSUE-023: add --id must check for duplicate explicit IDs across files
+// ===========================================================================
+
+#[test]
+fn add_rejects_duplicate_id_across_files() {
+    let dir = empty_project();
+
+    // Add a fact with explicit ID "shared" to .facts
+    facts_cmd(&dir)
+        .args(["add", "fact one", "--id", "shared"])
+        .assert()
+        .success();
+
+    // Try to add a fact with the same explicit ID to a different file
+    facts_cmd(&dir)
+        .args(["add", "fact two", "--file", "extra", "--id", "shared"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("ID already exists: shared"));
+}
+
+#[test]
+fn add_accepts_unique_id_across_files() {
+    let dir = empty_project();
+
+    // Add a fact with explicit ID "alpha" to .facts
+    facts_cmd(&dir)
+        .args(["add", "fact one", "--id", "alpha"])
+        .assert()
+        .success();
+
+    // Add a fact with a DIFFERENT explicit ID to a different file — should succeed
+    facts_cmd(&dir)
+        .args(["add", "fact two", "--file", "extra", "--id", "beta"])
+        .assert()
+        .success();
+
+    // Both files should exist with their respective facts
+    let main_content = fs::read_to_string(dir.path().join(".facts")).unwrap();
+    assert!(main_content.contains("id: alpha"));
+    let extra_content = fs::read_to_string(dir.path().join("extra.facts")).unwrap();
+    assert!(extra_content.contains("id: beta"));
+}
+
+// ===========================================================================
+// ISSUE-024: lint must detect duplicate explicit IDs across files
+// ===========================================================================
+
+#[test]
+fn lint_warns_duplicate_id_across_files() {
+    let dir = empty_project();
+
+    // Create two .facts files each with the same explicit ID
+    fs::write(
+        dir.path().join(".facts"),
+        "- label: fact one\n  id: dupe\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("extra.facts"),
+        "- label: fact two\n  id: dupe\n",
+    )
+    .unwrap();
+
+    facts_cmd(&dir)
+        .arg("lint")
+        .assert()
+        .success() // warnings don't cause failure
+        .stderr(predicate::str::contains("duplicate explicit id 'dupe'"))
+        .stderr(predicate::str::contains("across files"));
+}
+
+#[test]
+fn lint_passes_unique_ids_across_files() {
+    let dir = empty_project();
+
+    // Create two .facts files with different explicit IDs
+    fs::write(
+        dir.path().join(".facts"),
+        "- label: fact one\n  id: alpha\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("extra.facts"),
+        "- label: fact two\n  id: beta\n",
+    )
+    .unwrap();
+
+    facts_cmd(&dir)
+        .arg("lint")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("2 files passed"));
+}

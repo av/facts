@@ -41,16 +41,20 @@ pub fn assign_ids(facts: &[(String, Option<String>)]) -> Vec<String> {
                 .copied()
                 .collect();
 
-            if extendable.len() <= 1 {
+            if extendable.is_empty() {
                 continue;
             }
 
-            // Check if all colliding facts have identical hashes.
-            // If so, extending the ID length will never resolve the collision —
-            // skip directly to counter suffix disambiguation.
-            let all_same_hash = extendable
-                .iter()
-                .all(|&i| hashes[i] == hashes[extendable[0]]);
+            // Check if all colliding extendable facts have identical hashes.
+            // If so (and there are at least two), extending the ID length will
+            // never resolve the collision among them — use counter suffix
+            // disambiguation instead. When only one is extendable (colliding
+            // with an explicit ID), always extend it since extension will
+            // diverge from the explicit ID value.
+            let all_same_hash = extendable.len() > 1
+                && extendable
+                    .iter()
+                    .all(|&i| hashes[i] == hashes[extendable[0]]);
 
             let current_len = ids[extendable[0]].len();
             if current_len >= MAX_LEN || all_same_hash {
@@ -196,5 +200,26 @@ mod tests {
         // At len=5 we get digits [d4, d3, d2, d1, d0] reversed = [d0, d1, d2, d3, d4]
         // So the 3-char one should be a suffix of the 5-char one (last 3 chars)
         assert_eq!(&long[2..], &short[..]);
+    }
+
+    #[test]
+    fn test_computed_id_extended_when_colliding_with_explicit() {
+        // If a computed ID happens to match an explicit ID, the computed one
+        // should be extended to resolve the collision.
+        let label = "some fact";
+        let computed_3 = encode_base36(full_hash(label), 3);
+
+        // Second fact has an explicit ID equal to the first fact's computed ID.
+        let facts = vec![
+            (label.to_string(), None),
+            ("other fact".to_string(), Some(computed_3.clone())),
+        ];
+        let ids = assign_ids(&facts);
+        assert_eq!(ids[1], computed_3, "explicit ID must be preserved");
+        assert_ne!(ids[0], ids[1], "computed ID must be extended to avoid collision");
+        assert!(
+            ids[0].len() > 3,
+            "computed ID should be longer than 3 chars after extension"
+        );
     }
 }

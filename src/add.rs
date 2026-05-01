@@ -91,6 +91,31 @@ fn run_in(opts: &AddOptions, root: &Path) -> Result<()> {
     // Acquire advisory lock to prevent concurrent modifications.
     let _lock = FileLock::acquire(root)?;
 
+    // Reject duplicate explicit IDs across ALL .facts files.
+    if let Some(ref id) = opts.id {
+        let all_files = project::discover_fact_files(root)?;
+        for path in &all_files {
+            if !path.exists() {
+                continue;
+            }
+            let content = std::fs::read_to_string(path)
+                .with_context(|| format!("failed to read {}", path.display()))?;
+            let fname = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(".facts");
+            if let Ok(sheet) = parser::parse(&content, fname) {
+                let already_exists = sheet
+                    .all_facts()
+                    .iter()
+                    .any(|(_, f)| f.explicit_id.as_deref() == Some(id));
+                if already_exists {
+                    anyhow::bail!("ID already exists: {}", id);
+                }
+            }
+        }
+    }
+
     // Parse existing file or create empty sheet
     let mut sheet = if file_path.exists() {
         let content = std::fs::read_to_string(&file_path)
@@ -103,17 +128,6 @@ fn run_in(opts: &AddOptions, root: &Path) -> Result<()> {
             sections: Vec::new(),
         }
     };
-
-    // Reject duplicate explicit IDs.
-    if let Some(ref id) = opts.id {
-        let all_facts = sheet.all_facts();
-        let already_exists = all_facts
-            .iter()
-            .any(|(_, f)| f.explicit_id.as_deref() == Some(id));
-        if already_exists {
-            anyhow::bail!("ID already exists: {}", id);
-        }
-    }
 
     // Determine if this should be a plain string or mapping fact.
     // Tags alone do NOT promote to mapping — they go inline as @tag.
