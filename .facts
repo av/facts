@@ -1,8 +1,9 @@
 # facts
-
 - a CLI for fact-driven development with coding agents
 - works with fact sheets — flat lists of validatable atomic facts
 - extreme simplicity in everything — code, format, UX
+- there are no useless comments in this codebase
+- codebase is DRY
 
 ## format
 
@@ -43,6 +44,7 @@
 - lint flags mixed inline and mapping tags on the same fact
 - @implemented is a special tag used by the facts-implement skill
 - @implemented is informational — check still runs commands for tagged facts
+- tag names cannot conflict with filter operators (and, or, not)
 
 ### identity
 - every fact has a short ID derived from a hash of its label (tags stripped)
@@ -67,7 +69,8 @@
 
 ## cli
 
-- the CLI is named facts
+- label: the CLI is named facts
+  command: facts --version 2>&1 | head -1 | grep -q facts
 - written in Rust
 - distributed as a single compact binary
 
@@ -80,11 +83,15 @@
 - remove — remove a fact by ID, outputs what was removed
 - edit — modify a fact by ID, preserves explicit id
 - lint — validate that fact sheets are parseable
+- uninit — reverse of init, removes .facts file and agent skills
 
 ### init
 - creates a .facts file in the project root
 - detects well-known framework/runtime combos (e.g. Cargo.toml, package.json)
 - scaffolds initial facts based on detected stack
+- installs three agent skills to .agents/skills/ (facts, facts-discover, facts-implement)
+- creates .claude/skills/ symlinks for Claude Code integration
+- init is idempotent — safe to run multiple times
 
 ### check
 - lints all files first — aborts early on lint errors
@@ -140,6 +147,8 @@
 - reports clear error messages for structural issues
 - flags mixed inline and mapping tags on the same fact
 - does not run any validation commands
+- warns on duplicate explicit IDs across files
+- warns on bare tags, CRLF endings, empty labels, unknown continuations, duplicate keys, and double-@ tags
 
 ### errors
 - every error state has a clear, descriptive error message
@@ -152,12 +161,23 @@
 - write back is byte-for-byte deterministic
 - parse then write with no changes produces identical output
 
+### uninit
+- requires --force to delete a non-empty .facts file
+- removes agent skills from .agents/skills/ and .claude/skills/
+- preserves named .facts files (only removes .facts)
+- uninit is idempotent — safe to run multiple times
+
 ## architecture
 
 - minimal dependencies
-- clap for CLI argument parsing
-- anyhow for error handling
-- integration tests for all user-facing features
+- label: clap for CLI argument parsing
+  command: grep -q '^clap' Cargo.toml
+- label: anyhow for error handling
+  command: grep -q '^anyhow' Cargo.toml
+- label: integration tests for all user-facing features
+  command: test -f tests/cli.rs
+- advisory file locking for write operations via .facts.lock
+- inline unit tests in source modules alongside implementation
 
 ## platforms
 
