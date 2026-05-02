@@ -3,6 +3,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 
+use crate::id;
 use crate::lock::FileLock;
 use crate::model::{Fact, FactSheet, Section};
 use crate::parser;
@@ -26,14 +27,16 @@ pub struct AddOptions {
 }
 
 /// Run the add subcommand (auto-detects project root).
-pub fn run(opts: &AddOptions) -> Result<()> {
+/// Returns the assigned ID of the newly added fact.
+pub fn run(opts: &AddOptions) -> Result<String> {
     let root = project::find_project_root()?;
     run_in(opts, &root)
 }
 
 /// Run the add subcommand in a given root directory.
 /// Separated from `run` so tests can supply a temp dir without changing cwd.
-fn run_in(opts: &AddOptions, root: &Path) -> Result<()> {
+/// Returns the assigned ID of the newly added fact.
+fn run_in(opts: &AddOptions, root: &Path) -> Result<String> {
     if opts.label.contains('\n') || opts.label.contains('\r') {
         anyhow::bail!("label cannot contain newlines");
     }
@@ -154,6 +157,8 @@ fn run_in(opts: &AddOptions, root: &Path) -> Result<()> {
 
     fact.raw = writer::fact_to_raw(&fact);
 
+    let added_label = fact.label.clone();
+
     if let Some(ref section_path) = opts.section {
         add_to_section(&mut sheet, section_path, fact)?;
     } else {
@@ -164,7 +169,59 @@ fn run_in(opts: &AddOptions, root: &Path) -> Result<()> {
     std::fs::write(&file_path, &output)
         .with_context(|| format!("failed to write {}", file_path.display()))?;
 
-    Ok(())
+    // Re-read all fact sheets and assign IDs to find the new fact's ID.
+    let all_files = project::discover_fact_files(root)?;
+    let mut all_fact_labels: Vec<(String, Option<String>)> = Vec::new();
+    let mut target_idx = None;
+
+    for path in &all_files {
+        if !path.exists() {
+            continue;
+        }
+        let content = std::fs::read_to_string(path)
+            .with_context(|| format!("failed to read {}", path.display()))?;
+        let fname = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(".facts");
+        let file_sheet = parser::parse(&content, fname)
+            .with_context(|| format!("failed to parse {}", path.display()))?;
+
+        let is_target_file = path.file_name().and_then(|n| n.to_str()) == Some(filename.as_str());
+
+        for (section_path, f) in file_sheet.all_facts() {
+            let idx = all_fact_labels.len();
+            all_fact_labels.push((f.label.clone(), f.explicit_id.clone()));
+
+            // Match by label, file, and section path.
+            if is_target_file && f.label == added_label {
+                let fact_section = opts
+                    .section
+                    .as_ref()
+                    .map(|s| {
+                        s.split('/')
+                            .map(|p| p.trim().to_string())
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                let matches_section = section_path
+                    .iter()
+                    .map(|s| s.to_lowercase())
+                    .collect::<Vec<_>>()
+                    == fact_section
+                        .iter()
+                        .map(|s| s.to_lowercase())
+                        .collect::<Vec<_>>();
+                if matches_section {
+                    target_idx = Some(idx);
+                }
+            }
+        }
+    }
+
+    let assigned_ids = id::assign_ids(&all_fact_labels);
+    let idx = target_idx.ok_or_else(|| anyhow::anyhow!("failed to find newly added fact"))?;
+    Ok(assigned_ids[idx].clone())
 }
 
 /// Add a fact to a section, creating the section path if needed.

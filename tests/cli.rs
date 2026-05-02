@@ -3110,3 +3110,521 @@ fn list_filters_double_at_tag() {
         .success()
         .stdout(predicate::str::contains("fact"));
 }
+
+// ===========================================================================
+// add prints ID
+// ===========================================================================
+
+#[test]
+fn add_prints_id() {
+    let dir = project("");
+    let output = facts_cmd(&dir)
+        .args(["add", "a brand new fact"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let printed_id = stdout.trim();
+    assert!(!printed_id.is_empty(), "add should print the new fact's ID");
+    // ID should be short (at least 3 chars)
+    assert!(
+        printed_id.len() >= 3,
+        "ID should be at least 3 chars, got: {printed_id}"
+    );
+}
+
+#[test]
+fn add_printed_id_matches_list() {
+    let dir = project("");
+    let add_output = facts_cmd(&dir)
+        .args(["add", "fact for id matching"])
+        .output()
+        .unwrap();
+    assert!(add_output.status.success());
+    let add_id = String::from_utf8_lossy(&add_output.stdout)
+        .trim()
+        .to_string();
+
+    let list_output = facts_cmd(&dir).arg("list").output().unwrap();
+    let list_stdout = String::from_utf8_lossy(&list_output.stdout);
+    let list_id = list_stdout
+        .lines()
+        .find(|l| l.contains("fact for id matching"))
+        .expect("fact should appear in list")
+        .split_whitespace()
+        .next()
+        .unwrap();
+
+    assert_eq!(
+        add_id, list_id,
+        "ID printed by add ({add_id}) should match list output ({list_id})"
+    );
+}
+
+#[test]
+fn add_with_explicit_id_prints_that_id() {
+    let dir = project("");
+    let output = facts_cmd(&dir)
+        .args(["add", "explicit id fact", "--id", "xyz"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let printed_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    assert_eq!(
+        printed_id, "xyz",
+        "add with --id should print the explicit ID"
+    );
+}
+
+// ===========================================================================
+// get
+// ===========================================================================
+
+#[test]
+fn get_shows_label() {
+    let dir = project("- a simple fact\n");
+
+    let list_output = facts_cmd(&dir).arg("list").output().unwrap();
+    let stdout = String::from_utf8_lossy(&list_output.stdout);
+    let id = stdout
+        .lines()
+        .find(|l| l.contains("a simple fact"))
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap();
+
+    facts_cmd(&dir)
+        .args(["get", id])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("label: a simple fact"));
+}
+
+#[test]
+fn get_shows_command_when_present() {
+    let dir = project("- label: cmd fact\n  command: echo hello\n");
+
+    let list_output = facts_cmd(&dir).arg("list").output().unwrap();
+    let stdout = String::from_utf8_lossy(&list_output.stdout);
+    let id = stdout
+        .lines()
+        .find(|l| l.contains("cmd fact"))
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap();
+
+    facts_cmd(&dir)
+        .args(["get", id])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("command: echo hello"));
+}
+
+#[test]
+fn get_omits_command_when_absent() {
+    let dir = project("- manual fact\n");
+
+    let list_output = facts_cmd(&dir).arg("list").output().unwrap();
+    let stdout = String::from_utf8_lossy(&list_output.stdout);
+    let id = stdout
+        .lines()
+        .find(|l| l.contains("manual fact"))
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap();
+
+    let output = facts_cmd(&dir).args(["get", id]).output().unwrap();
+    let get_stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(!get_stdout.contains("command:"));
+}
+
+#[test]
+fn get_shows_tags_when_present() {
+    let dir = project("- label: tagged fact\n  command: echo ok\n  tags: [mvp, core]\n");
+
+    let list_output = facts_cmd(&dir).arg("list").output().unwrap();
+    let stdout = String::from_utf8_lossy(&list_output.stdout);
+    let id = stdout
+        .lines()
+        .find(|l| l.contains("tagged fact"))
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap();
+
+    facts_cmd(&dir)
+        .args(["get", id])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("tags: [mvp, core]"));
+}
+
+#[test]
+fn get_omits_tags_when_absent() {
+    let dir = project("- untagged fact\n");
+
+    let list_output = facts_cmd(&dir).arg("list").output().unwrap();
+    let stdout = String::from_utf8_lossy(&list_output.stdout);
+    let id = stdout
+        .lines()
+        .find(|l| l.contains("untagged fact"))
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap();
+
+    let output = facts_cmd(&dir).args(["get", id]).output().unwrap();
+    let get_stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(!get_stdout.contains("tags:"));
+}
+
+#[test]
+fn get_shows_section_path() {
+    let dir = project("# cli\n\n## check\n\n- check fact\n");
+
+    let list_output = facts_cmd(&dir).arg("list").output().unwrap();
+    let stdout = String::from_utf8_lossy(&list_output.stdout);
+    let id = stdout
+        .lines()
+        .find(|l| l.contains("check fact"))
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap();
+
+    facts_cmd(&dir)
+        .args(["get", id])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("section: cli/check"));
+}
+
+#[test]
+fn get_omits_section_for_preamble_fact() {
+    let dir = project("- preamble fact\n");
+
+    let list_output = facts_cmd(&dir).arg("list").output().unwrap();
+    let stdout = String::from_utf8_lossy(&list_output.stdout);
+    let id = stdout
+        .lines()
+        .find(|l| l.contains("preamble fact"))
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap();
+
+    let output = facts_cmd(&dir).args(["get", id]).output().unwrap();
+    let get_stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(!get_stdout.contains("section:"));
+}
+
+#[test]
+fn get_shows_file_path() {
+    let dir = project("- file fact\n");
+
+    let list_output = facts_cmd(&dir).arg("list").output().unwrap();
+    let stdout = String::from_utf8_lossy(&list_output.stdout);
+    let id = stdout
+        .lines()
+        .find(|l| l.contains("file fact"))
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap();
+
+    facts_cmd(&dir)
+        .args(["get", id])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("file: .facts"));
+}
+
+#[test]
+fn get_shows_named_file() {
+    let dir = empty_project();
+    fs::write(dir.path().join("cli.facts"), "- cli fact\n").unwrap();
+    fs::write(dir.path().join(".facts"), "").unwrap();
+
+    let list_output = facts_cmd(&dir).arg("list").output().unwrap();
+    let stdout = String::from_utf8_lossy(&list_output.stdout);
+    let id = stdout
+        .lines()
+        .find(|l| l.contains("cli fact"))
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap();
+
+    facts_cmd(&dir)
+        .args(["get", id])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("file: cli.facts"));
+}
+
+#[test]
+fn get_shows_explicit_id() {
+    let dir = project("- label: custom id fact\n  id: myid\n");
+
+    facts_cmd(&dir)
+        .args(["get", "myid"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("id: myid"));
+}
+
+#[test]
+fn get_omits_id_for_computed_id() {
+    let dir = project("- computed id fact\n");
+
+    let list_output = facts_cmd(&dir).arg("list").output().unwrap();
+    let stdout = String::from_utf8_lossy(&list_output.stdout);
+    let id = stdout
+        .lines()
+        .find(|l| l.contains("computed id fact"))
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap();
+
+    let output = facts_cmd(&dir).args(["get", id]).output().unwrap();
+    let get_stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !get_stdout.contains("id:"),
+        "computed IDs should not show id: line, got:\n{get_stdout}"
+    );
+}
+
+#[test]
+fn get_unknown_id_exits_nonzero() {
+    let dir = project("- some fact\n");
+
+    facts_cmd(&dir)
+        .args(["get", "zzz"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("no fact found with ID 'zzz'"));
+}
+
+#[test]
+fn get_full_output() {
+    // Test a fact with all fields populated
+    let dir =
+        project("# section\n\n- label: full fact\n  id: f1\n  command: echo ok\n  tags: [mvp]\n");
+
+    let output = facts_cmd(&dir).args(["get", "f1"]).output().unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    assert!(stdout.contains("label: full fact"));
+    assert!(stdout.contains("section: section"));
+    assert!(stdout.contains("file: .facts"));
+    assert!(stdout.contains("id: f1"));
+    assert!(stdout.contains("command: echo ok"));
+    assert!(stdout.contains("tags: [mvp]"));
+}
+
+// ===========================================================================
+// move
+// ===========================================================================
+
+#[test]
+fn move_same_file_to_different_section() {
+    let dir = project("# alpha\n\n- fact to move\n\n# beta\n\n- beta fact\n");
+
+    // Find the ID
+    let list_output = facts_cmd(&dir).arg("list").output().unwrap();
+    let stdout = String::from_utf8_lossy(&list_output.stdout);
+    let id = stdout
+        .lines()
+        .find(|l| l.contains("fact to move"))
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap();
+
+    facts_cmd(&dir)
+        .args(["move", id, "--section", "beta"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(id));
+
+    let content = fs::read_to_string(dir.path().join(".facts")).unwrap();
+    // Source section should be cleaned up (it was the only fact)
+    assert!(
+        !content.contains("# alpha"),
+        "empty source section should be removed"
+    );
+    assert!(content.contains("# beta"));
+    assert!(content.contains("fact to move"));
+    assert!(content.contains("beta fact"));
+}
+
+#[test]
+fn move_cross_file() {
+    let dir = project("- fact to move\n- fact to stay\n");
+
+    let list_output = facts_cmd(&dir).arg("list").output().unwrap();
+    let stdout = String::from_utf8_lossy(&list_output.stdout);
+    let id = stdout
+        .lines()
+        .find(|l| l.contains("fact to move"))
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap();
+
+    facts_cmd(&dir)
+        .args(["move", id, "--file", "other.facts"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(id));
+
+    let source = fs::read_to_string(dir.path().join(".facts")).unwrap();
+    assert!(!source.contains("fact to move"));
+    assert!(source.contains("fact to stay"));
+
+    let target = fs::read_to_string(dir.path().join("other.facts")).unwrap();
+    assert!(target.contains("fact to move"));
+}
+
+#[test]
+fn move_creates_target_section() {
+    let dir = project("- fact to move\n");
+
+    let list_output = facts_cmd(&dir).arg("list").output().unwrap();
+    let stdout = String::from_utf8_lossy(&list_output.stdout);
+    let id = stdout
+        .lines()
+        .find(|l| l.contains("fact to move"))
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap();
+
+    facts_cmd(&dir)
+        .args(["move", id, "--section", "new/nested"])
+        .assert()
+        .success();
+
+    let content = fs::read_to_string(dir.path().join(".facts")).unwrap();
+    assert!(content.contains("# new"));
+    assert!(content.contains("## nested"));
+    assert!(content.contains("fact to move"));
+}
+
+#[test]
+fn move_cleans_up_empty_sections() {
+    let dir = project("# only\n\n- lonely fact\n\n# keep\n\n- keep fact\n");
+
+    let list_output = facts_cmd(&dir).arg("list").output().unwrap();
+    let stdout = String::from_utf8_lossy(&list_output.stdout);
+    let id = stdout
+        .lines()
+        .find(|l| l.contains("lonely fact"))
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap();
+
+    facts_cmd(&dir)
+        .args(["move", id, "--section", "keep"])
+        .assert()
+        .success();
+
+    let content = fs::read_to_string(dir.path().join(".facts")).unwrap();
+    assert!(
+        !content.contains("# only"),
+        "empty section should be cleaned up"
+    );
+    assert!(content.contains("# keep"));
+    assert!(content.contains("lonely fact"));
+}
+
+#[test]
+fn move_retains_all_properties() {
+    let dir =
+        project("- label: full fact\n  id: myid\n  command: echo ok\n  tags: [mvp, core]\n");
+
+    facts_cmd(&dir)
+        .args(["move", "myid", "--section", "target"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("myid"));
+
+    let content = fs::read_to_string(dir.path().join(".facts")).unwrap();
+    assert!(content.contains("label: full fact"));
+    assert!(content.contains("id: myid"));
+    assert!(content.contains("command: echo ok"));
+    assert!(content.contains("tags: [mvp, core]"));
+    assert!(content.contains("# target"));
+}
+
+#[test]
+fn move_requires_section_or_file() {
+    let dir = project("- some fact\n");
+
+    let list_output = facts_cmd(&dir).arg("list").output().unwrap();
+    let stdout = String::from_utf8_lossy(&list_output.stdout);
+    let id = stdout
+        .lines()
+        .find(|l| l.contains("some fact"))
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap();
+
+    facts_cmd(&dir)
+        .args(["move", id])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("at least one"));
+}
+
+#[test]
+fn move_unknown_id_errors() {
+    let dir = project("- some fact\n");
+    facts_cmd(&dir)
+        .args(["move", "zzz", "--section", "dest"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("zzz"));
+}
+
+#[test]
+fn move_cross_file_with_section() {
+    let dir = project("- fact to relocate\n");
+
+    let list_output = facts_cmd(&dir).arg("list").output().unwrap();
+    let stdout = String::from_utf8_lossy(&list_output.stdout);
+    let id = stdout
+        .lines()
+        .find(|l| l.contains("fact to relocate"))
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap();
+
+    facts_cmd(&dir)
+        .args([
+            "move",
+            id,
+            "--section",
+            "api/endpoints",
+            "--file",
+            "api.facts",
+        ])
+        .assert()
+        .success();
+
+    let source = fs::read_to_string(dir.path().join(".facts")).unwrap();
+    assert!(!source.contains("fact to relocate"));
+
+    let target = fs::read_to_string(dir.path().join("api.facts")).unwrap();
+    assert!(target.contains("# api"));
+    assert!(target.contains("## endpoints"));
+    assert!(target.contains("fact to relocate"));
+}

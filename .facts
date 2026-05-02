@@ -53,13 +53,23 @@
   command: grep -q "tags.join" src/writer.rs && grep -q "@{tag}" src/writer.rs
 - label: lint flags mixed inline and mapping tags on the same fact
   command: grep -q "mixed.*tag\|inline.*mapping.*tag\|Mixed" src/lint.rs
-- label: is a special tag used by the facts-implement skill
+- label: draft, spec, and implemented are lifecycle tags that drive agent workflow
   tags: [implemented]
 - label: is informational — check still runs commands for tagged facts
   command: ! grep -q "skip.*implemented\|filter.*implemented" src/check.rs
   tags: [implemented]
 - label: tag names cannot conflict with filter operators (and, or, not)
   command: grep -q "conflicts with filter operator" src/add.rs
+
+### lifecycle
+- three well-known tags drive the agent workflow: @draft, @spec, @implemented
+- @draft — rough idea, needs refinement and atomization
+- @spec — precise and actionable, ready to implement
+- @implemented — true and backed by code
+- untagged facts are ground truth — verified against the codebase
+- the lifecycle is a pipeline: @draft → @spec → @implemented
+- facts-discover classifies facts by checking them against the codebase
+- each agent skill owns one lifecycle transition
 
 ### identity
 - every fact has a short ID derived from a hash of its label (tags stripped)
@@ -306,20 +316,20 @@
   command: test -f skills/facts/SKILL.md
 
 ### facts-discover
-- label: instructs agent to scan the codebase and make the fact sheet an accurate mirror of reality
-  command: grep -q "scan.*codebase\|mirror" skills/facts-discover/SKILL.md
+- label: scans the codebase and classifies every fact by lifecycle stage
+  command: grep -q "classif\|lifecycle" skills/facts-discover/SKILL.md
 - label: uses subagents to scan different areas of the codebase in parallel
   command: grep -q "subagent\|parallel" skills/facts-discover/SKILL.md
-- adds, edits, and removes facts to match what is actually true now
-- label: only records what is — not what should be
-  command: grep -q "Only record what is" skills/facts-discover/SKILL.md
+- label: auto-tags: vague → @draft, precise but unbuilt → @spec, code-backed → @implemented
+  command: grep -q "@draft" skills/facts-discover/SKILL.md && grep -q "@spec" skills/facts-discover/SKILL.md && grep -q "@implemented" skills/facts-discover/SKILL.md
+- adds missing facts about the codebase as untagged ground truth
 - reports what changed at the end
 - label: source is in ./skills/facts-discover/
   command: test -f skills/facts-discover/SKILL.md
 
 ### facts-implement
-- label: instructs agent to read the fact sheet as a spec and implement all unimplemented facts
-  command: grep -q "implement.*unimplemented\|spec" skills/facts-implement/SKILL.md
+- label: operates on @spec facts — implements them in code, then tags @implemented
+  command: grep -q "@spec" skills/facts-implement/SKILL.md
 - agent decides order and priority based on its understanding of the codebase
 - label: uses subagents to parallelize independent work
   command: grep -q "subagent\|parallel" skills/facts-implement/SKILL.md
@@ -333,11 +343,74 @@
   command: test -f skills/facts-implement/SKILL.md
 
 ### facts-refine
-- label: instructs agent to collaboratively sharpen vague facts, resolve contradictions, and fill gaps
-  command: grep -q "ambiguit\|contradict\|sharpen\|gaps" skills/facts-refine/SKILL.md
+- label: operates on @draft facts — refines them into precise @spec facts with the user
+  command: grep -q "@draft" skills/facts-refine/SKILL.md && grep -q "@spec" skills/facts-refine/SKILL.md
 - interactive — proposes changes, user decides
 - every change discussed with user before applying
 - label: identifies vague, compound, contradictory, and gapped facts
   command: grep -q "Vague\|Compound\|Contradict\|Gap" skills/facts-refine/SKILL.md
 - label: source is in ./skills/facts-refine/
   command: test -f skills/facts-refine/SKILL.md
+
+# cli
+
+## get
+- label: get — look up a single fact by ID, display label, section, file, command, and tags
+  command: grep -q "Get" src/main.rs && test -f src/get.rs
+  tags: [implemented]
+- label: get exits non-zero when the ID is not found
+  command: grep -q "no fact found with ID" src/get.rs
+  tags: [implemented]
+- label: get shows section path for facts in sections
+  command: grep -q "section_path.join" src/get.rs
+  tags: [implemented]
+- label: get shows tags when present
+  command: grep -q "tags:" src/get.rs && grep -q "tag_list" src/get.rs
+  tags: [implemented]
+- label: get shows command when present
+  command: grep -q "command:" src/get.rs && grep -q "fact.command" src/get.rs
+  tags: [implemented]
+- label: get shows file path
+  command: grep -q "file:" src/get.rs && grep -q "sheet.filename" src/get.rs
+  tags: [implemented]
+
+## subcommands
+- label: move — relocate a fact by ID to a different section or file
+  command: grep -q "Move" src/main.rs && test -f src/move_fact.rs
+  tags: [implemented]
+- label: get — look up a single fact by ID
+  command: grep -q "Get" src/main.rs && test -f src/get.rs
+  tags: [implemented]
+
+## move
+- label: moves a fact to a different section within the same file
+  command: grep -q "move.*section\|section.*move\|target_section" src/move_fact.rs
+  tags: [implemented]
+- label: moves a fact to a different file
+  command: grep -q "target_file\|file.*move\|cross.file" src/move_fact.rs
+  tags: [implemented]
+- label: creates target section if it does not exist
+  command: grep -q "ensure_section_path\|add_to_section\|section.*creat" src/move_fact.rs
+  tags: [implemented]
+- label: cleans up empty sections after move
+  command: grep -q "cleanup_empty_sections\|empty.*section" src/move_fact.rs
+  tags: [implemented]
+- label: retains all fact properties (label, command, tags, explicit ID)
+  command: grep -q "explicit_id\|\.tags\|\.command\|\.label" src/move_fact.rs
+  tags: [implemented]
+- label: requires at least one of --section or --file
+  command: grep -q "at least one\|requires.*section.*file\|must provide" src/move_fact.rs
+  tags: [implemented]
+
+## add
+
+### output
+- label: add prints the new fact's assigned ID to stdout
+  command: grep -q 'println.*id' src/main.rs
+  tags: [implemented]
+- label: the printed ID matches what list shows for that fact
+  command: grep -q "println.*id" src/add.rs || grep -q "println.*{id}" src/main.rs
+  tags: [implemented]
+- label: add with --id prints the explicit ID
+  command: grep -q "explicit_id\|explicit.*id\|opts\.id" src/add.rs && grep -q "println.*{id}" src/main.rs
+  tags: [implemented]

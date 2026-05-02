@@ -96,6 +96,14 @@ Run `facts <command> --help` for the full flag reference.
 
 **Tags:** `@word` tokens for filtering. Inline for plain strings (`- some fact @mvp`), `tags:` key for mappings. Stripped from the label before display and ID hashing. Filter with boolean expressions: `--tags "mvp and not blocked"`.
 
+**Lifecycle tags:** Three well-known tags drive the agent workflow:
+- `@draft` — rough idea, needs refinement and atomization
+- `@spec` — precise and actionable, ready to implement
+- `@implemented` — true and backed by code
+- Untagged facts are ground truth — verified against the codebase
+
+The lifecycle flows `@draft → @spec → @implemented`. Each companion skill owns one transition.
+
 **IDs:** Every fact gets a short ID (3+ chars) derived from its label hash. Stable as long as the label doesn't change. Use `--id` or `--new-id` to override.
 
 **Validation:** Commands run via `$SHELL` (fallback `sh`) in the project root. Exit 0 = fact holds. Write commands that are fast and idempotent — they run on every check.
@@ -121,19 +129,21 @@ Use the fact sheet to orient before writing code. It is the source of truth for 
 **Define the spec (most common user intent):**
 When the user says "work on facts", "add facts", or "define the spec", they want to collaboratively define what should be true — not audit what already is.
 ```
-facts add "users can sign up" --section features/auth
-facts add "signup returns 201" --command "curl -s ..." --section features/auth
+facts add "users can sign up" --section features/auth --tags "draft"
+facts add "signup returns 201" --command "curl -s ..." --section features/auth --tags "spec"
 ```
 - Discuss with the user what the project should look like
-- Add facts that describe intended behavior, structure, or constraints
-- Leave new facts without `@implemented` — they are spec, not documentation
-- Do NOT remove unimplemented facts — they represent intended future work
+- Add rough ideas as `@draft` — they'll be refined into precise specs later
+- Add precise, actionable facts as `@spec` — they're ready to implement
+- Do NOT remove `@draft` or `@spec` facts — they represent intended future work
 - Do NOT run `facts-discover` unless the user explicitly asks to sync with reality
 
-**Track implementation progress:**
+**Track lifecycle progress:**
 ```
-facts list --tags "not implemented"     # what's left to do
-facts edit <id> --add-tag "implemented" # mark done
+facts list --tags "draft"               # rough ideas to refine
+facts list --tags "spec"                # ready to implement
+facts list --tags "implemented"         # done
+facts list --tags "not implemented"     # all remaining work
 facts check                             # verify
 ```
 
@@ -148,6 +158,8 @@ facts add "new truth" --section foo     # add discovered truths
 
 ## Companion skills
 
-- **facts-refine** — collaboratively sharpen vague facts, resolve contradictions, and fill gaps. Use when the fact sheet needs quality improvement.
-- **facts-discover** — scan the codebase and make the fact sheet match reality. Use when you need to bootstrap or update the fact sheet from existing code.
-- **facts-implement** — read the fact sheet as a spec and implement all unimplemented facts in code. Use when the fact sheet is ahead of the codebase.
+Each skill owns one lifecycle transition:
+
+- **facts-discover** — scan the codebase and classify every fact by lifecycle stage (`@draft`, `@spec`, `@implemented`). Use to triage or bootstrap.
+- **facts-refine** — pick up `@draft` facts and refine them into precise `@spec` facts with the user. Use when drafts need sharpening.
+- **facts-implement** — pick up `@spec` facts and implement them in code, then tag `@implemented`. Use when specs are ready to build.

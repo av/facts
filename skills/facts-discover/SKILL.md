@@ -1,23 +1,32 @@
 ---
 name: facts-discover
 description: >
-  Scan the codebase and sync .facts files to match reality — add missing
-  facts, fix inaccurate ones, remove obsolete ones. Use when asked to
-  discover facts, bootstrap or update a fact sheet, scan the codebase for
-  truths, sync facts to match the code, or audit the fact sheet for accuracy.
+  Scan the codebase and classify every fact by lifecycle stage — tag
+  @draft, @spec, or @implemented based on what the code actually shows.
+  Add missing facts, fix inaccurate ones, remove obsolete ones. Use when
+  asked to discover facts, bootstrap or update a fact sheet, scan the
+  codebase for truths, sync facts to match the code, or audit the fact
+  sheet for accuracy.
 ---
 
 # facts-discover
 
-You are a fact sheet maintainer. Your job is to scan the codebase and make the `.facts` file(s) an accurate, complete mirror of the project — in a single session.
+You are a fact sheet maintainer. Your job is to scan the codebase, classify every fact by lifecycle stage, and add missing truths — in a single session.
 
 ## When to use this skill
 
-This skill syncs the fact sheet to match current reality. It will remove facts that describe intended-but-unimplemented behavior. **Only use when the user explicitly asks to discover, audit, or sync facts.** If the user says "work on facts" or "add facts", they want to define spec — use the `facts` skill instead, not this one.
+This skill classifies facts and syncs the fact sheet with reality. **Only use when the user explicitly asks to discover, audit, or sync facts.** If the user says "work on facts" or "add facts", they want to define spec — use the `facts` skill instead, not this one.
 
 ## Goal
 
-Every fact must reflect something that is actually true about the codebase right now. Remove lies, add truths, fix inaccuracies. When you are done, the fact sheet should be a reliable specification that another agent can implement against or validate from.
+After running this skill, every fact should have the correct lifecycle tag:
+
+- **`@draft`** — the fact is vague or high-level; needs refinement before it can be implemented (e.g. "this project supports stripe payments")
+- **`@spec`** — the fact is precise and actionable, but the code doesn't back it up yet (e.g. "POST /payments creates a Stripe PaymentIntent and returns the client secret")
+- **`@implemented`** — the fact is true and the codebase proves it
+- **Untagged** — ground truth discovered from the codebase; already verified by observation
+
+Additionally, add facts about important truths not yet in the fact sheet (these go in untagged, since they're already true), fix inaccurate facts, and remove obsolete ones.
 
 Facts with good validation commands are self-enforcing — they catch regressions automatically. But **a manual fact is better than a fact with a useless command.** A command that always passes regardless of whether the fact is true gives false confidence and is worse than no command at all. Only add a command when it genuinely tests the claim.
 
@@ -42,14 +51,18 @@ Build a comprehensive mental model of the project. Use subagents to scan differe
 
 Each subagent should report back a list of factual observations about its area — not opinions, not aspirations, just what is true now.
 
-### 3. Reconcile facts against reality
+### 3. Classify facts by lifecycle stage
 
-For each existing fact, determine its status:
+For each existing fact, check it against the codebase and assign the correct lifecycle tag:
 
-- **True and current** — keep it
-- **Partially true** — edit: `facts edit <id> --label "corrected statement"`
+- **True and code-backed** → tag `@implemented`: `facts edit <id> --add-tag "implemented"`
+- **Precise and actionable, but code doesn't exist yet** → tag `@spec`: `facts edit <id> --add-tag "spec"`
+- **Vague or high-level, not yet actionable** → tag `@draft`: `facts edit <id> --add-tag "draft"`
+- **Partially true** — edit the label first, then classify: `facts edit <id> --label "corrected statement"`
 - **False or obsolete** — remove: `facts remove <id>`
 - **Missing validation** — the fact could be verified by a command but lacks one: `facts edit <id> --command "check command"`
+
+When a fact already has a lifecycle tag, verify it's still correct. An `@implemented` fact whose code was removed should be reclassified to `@spec`. A `@draft` fact that was refined elsewhere should be updated.
 
 When removing facts, check if the concept has evolved rather than disappeared — edit instead of remove+add when the same idea persists in a new form.
 
@@ -180,7 +193,8 @@ Report what changed: facts added, edited, removed, commands added. If any areas 
 - When writing check commands, prefer `grep -q`, `test -f`, `test -d`, `jq -e`, and similar fast read-only checks. Avoid commands that build, install, or modify anything unless that is the point of the fact (e.g. "project builds successfully").
 - Use tags to categorize when useful (e.g. `@ci`, `@api`, `@core`). Use `--add-tag` and `--remove-tag` for incremental tag changes.
 - Sections with no remaining facts are cleaned up automatically by the CLI.
-- Do not add facts about things that should be true but aren't yet — that is specification, not discovery. Only record what is.
+- **Lifecycle classification is the primary job.** Every fact should end up with the right lifecycle tag (`@draft`, `@spec`, `@implemented`) or no tag (ground truth). Do not remove `@draft` or `@spec` facts — classify them, don't delete aspirational work.
+- When adding new facts you discovered from the codebase, leave them untagged — they are already true by observation.
 
 ## Example session
 
@@ -194,27 +208,26 @@ facts check
 # Subagent 2: API surface, routes, contracts
 # Subagent 3: testing, CI, deploy
 
-# A fact is failing — the build command changed
-facts edit x1z --command "cargo build --quiet"
+# Classify existing facts by lifecycle stage:
 
-# Found a new truth while reading code
-facts add "API rate limits to 100 req/min per key" --section api/limits \
-  --command "grep -q 'rate_limit.*100' src/middleware.rs"
+# This fact is true — code proves it
+facts edit x1z --add-tag "implemented"
+
+# This fact is precise but the code doesn't exist yet
+facts edit a2b --add-tag "spec"
+
+# This fact is vague ("supports payments") — needs refinement
+facts edit c3d --add-tag "draft"
 
 # An old fact about Python is no longer true — project migrated to Rust
 facts remove p2q
 
-# Add commands where they meaningfully validate the claim
-facts edit a3b --command "test -f docker-compose.yml"
-facts edit c7d --command "grep -q '^serde' Cargo.toml"
-
-# Leave facts manual when no meaningful command exists:
-# "controllers follow thin-controller pattern" — subjective, no short check
-# "errors bubble up via anyhow context" — grep would just find the word "anyhow"
-# "file order is canonical" — design intent, not mechanically checkable
+# Found a new truth while reading code — add untagged (ground truth)
+facts add "API rate limits to 100 req/min per key" --section api/limits \
+  --command "grep -q 'rate_limit.*100' src/middleware.rs"
 
 # Verify everything
 facts check
 
-# Report: 3 added, 1 edited, 1 removed, 2 commands added, 3 left manual (no meaningful check)
+# Report: 5 classified (@implemented: 3, @spec: 1, @draft: 1), 1 added, 1 removed
 ```

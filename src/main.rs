@@ -2,6 +2,7 @@ mod add;
 mod check;
 mod color;
 mod edit;
+mod get;
 mod id;
 mod init;
 mod lint;
@@ -9,6 +10,7 @@ mod list;
 mod locate;
 mod lock;
 mod model;
+mod move_fact;
 mod parser;
 mod project;
 mod remove;
@@ -91,6 +93,26 @@ enum Command {
     /// Remove a fact by ID, outputs what was removed.
     Remove {
         /// The ID of the fact to remove.
+        id: String,
+    },
+
+    /// Move a fact by ID to a different section or file.
+    Move {
+        /// The ID of the fact to move.
+        id: String,
+
+        /// Target section path (e.g. "cli/check"). Created if needed.
+        #[arg(long)]
+        section: Option<String>,
+
+        /// Target .facts file (e.g. "api.facts").
+        #[arg(long)]
+        file: Option<String>,
+    },
+
+    /// Look up a single fact by ID and display its details.
+    Get {
+        /// The ID of the fact to look up.
         id: String,
     },
 
@@ -192,10 +214,22 @@ fn main() -> anyhow::Result<()> {
                 id,
                 tags,
             };
-            add::run(&opts)?;
+            let id = add::run(&opts)?;
+            println!("{id}");
         }
         Some(Command::Remove { id }) => {
             remove::run(&id)?;
+        }
+        Some(Command::Move { id, section, file }) => {
+            let opts = move_fact::MoveOptions {
+                target_id: id,
+                target_section: section,
+                target_file: file,
+            };
+            move_fact::run(&opts)?;
+        }
+        Some(Command::Get { id }) => {
+            get::run(&id)?;
         }
         Some(Command::Edit {
             id,
