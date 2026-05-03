@@ -1453,9 +1453,8 @@ fn section_filter_case_insensitive_nested() {
 #[test]
 fn section_filter_matches_at_any_depth() {
     // --section "init" should match "cli > init" even without the "cli/" prefix
-    let dir = project(
-        "# cli\n\n- cli fact\n\n## init\n\n- init fact\n\n## check\n\n- check fact\n",
-    );
+    let dir =
+        project("# cli\n\n- cli fact\n\n## init\n\n- init fact\n\n## check\n\n- check fact\n");
     facts_cmd(&dir)
         .args(["list", "--section", "init"])
         .assert()
@@ -1495,9 +1494,8 @@ fn section_filter_deep_match_no_substring() {
 #[test]
 fn section_filter_partial_path_at_any_depth() {
     // --section "cli/init" should match at any depth (e.g. "project > cli > init")
-    let dir = project(
-        "# project\n\n## cli\n\n### init\n\n- init fact\n\n### check\n\n- check fact\n",
-    );
+    let dir =
+        project("# project\n\n## cli\n\n### init\n\n- init fact\n\n### check\n\n- check fact\n");
     facts_cmd(&dir)
         .args(["list", "--section", "cli/init"])
         .assert()
@@ -3546,8 +3544,7 @@ fn move_cleans_up_empty_sections() {
 
 #[test]
 fn move_retains_all_properties() {
-    let dir =
-        project("- label: full fact\n  id: myid\n  command: echo ok\n  tags: [mvp, core]\n");
+    let dir = project("- label: full fact\n  id: myid\n  command: echo ok\n  tags: [mvp, core]\n");
 
     facts_cmd(&dir)
         .args(["move", "myid", "--section", "target"])
@@ -3627,4 +3624,153 @@ fn move_cross_file_with_section() {
     assert!(target.contains("# api"));
     assert!(target.contains("## endpoints"));
     assert!(target.contains("fact to relocate"));
+}
+
+// ===========================================================================
+// fmt
+// ===========================================================================
+
+#[test]
+fn fmt_normalizes_file() {
+    let dir = project("# section\n\n- fact one\n- fact two\n");
+    facts_cmd(&dir).arg("fmt").assert().success();
+
+    let content = fs::read_to_string(dir.path().join(".facts")).unwrap();
+    assert!(content.contains("- fact one"));
+    assert!(content.contains("- fact two"));
+}
+
+#[test]
+fn fmt_aborts_on_lint_errors() {
+    let dir = project("- label: good fact\n  badkey: nope\n");
+    facts_cmd(&dir)
+        .arg("fmt")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("error"));
+}
+
+#[test]
+fn fmt_is_idempotent() {
+    let content = "# section\n\n- label: a fact\n  command: echo hi\n  tags: [mvp]\n";
+    let dir = project(content);
+    facts_cmd(&dir).arg("fmt").assert().success();
+
+    let after = fs::read_to_string(dir.path().join(".facts")).unwrap();
+    assert_eq!(after, content);
+}
+
+// ===========================================================================
+// list/check tags display
+// ===========================================================================
+
+#[test]
+fn list_shows_tags_after_label() {
+    let dir = project("- label: tagged fact\n  tags: [implemented]\n");
+    facts_cmd(&dir)
+        .arg("list")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("tagged fact"))
+        .stdout(predicate::str::contains("@implemented"));
+}
+
+#[test]
+fn list_no_tags_shows_no_suffix() {
+    let dir = project("- plain fact\n");
+    facts_cmd(&dir)
+        .arg("list")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("plain fact"))
+        .stdout(predicate::str::contains("@").not());
+}
+
+// ===========================================================================
+// batch edit
+// ===========================================================================
+
+#[test]
+fn edit_batch_add_tag_to_multiple() {
+    let dir = project("- fact one\n- fact two\n- fact three\n");
+
+    // Get IDs for facts one and two
+    let output = facts_cmd(&dir).arg("list").output().unwrap();
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let lines: Vec<&str> = stdout.lines().collect();
+    let id1: &str = lines[0].split_whitespace().next().unwrap();
+    let id2: &str = lines[1].split_whitespace().next().unwrap();
+
+    facts_cmd(&dir)
+        .args(["edit", id1, id2, "--add-tag", "spec"])
+        .assert()
+        .success();
+
+    let content = fs::read_to_string(dir.path().join(".facts")).unwrap();
+    assert!(content.contains("fact one @spec"));
+    assert!(content.contains("fact two @spec"));
+    assert!(!content.contains("fact three @spec"));
+}
+
+#[test]
+fn edit_batch_fails_if_any_id_unknown() {
+    let dir = project("- fact one\n- fact two\n");
+
+    let output = facts_cmd(&dir).arg("list").output().unwrap();
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let id1: &str = stdout
+        .lines()
+        .next()
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap();
+
+    facts_cmd(&dir)
+        .args(["edit", id1, "zzz", "--add-tag", "spec"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("zzz"));
+
+    // No changes should have been made
+    let content = fs::read_to_string(dir.path().join(".facts")).unwrap();
+    assert!(!content.contains("@spec"));
+}
+
+#[test]
+fn edit_batch_rejects_label_with_multiple_ids() {
+    let dir = project("- fact one\n- fact two\n");
+
+    let output = facts_cmd(&dir).arg("list").output().unwrap();
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let lines: Vec<&str> = stdout.lines().collect();
+    let id1: &str = lines[0].split_whitespace().next().unwrap();
+    let id2: &str = lines[1].split_whitespace().next().unwrap();
+
+    facts_cmd(&dir)
+        .args(["edit", id1, id2, "--label", "shared label"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "--label cannot be used with multiple IDs",
+        ));
+}
+
+#[test]
+fn edit_batch_rejects_new_id_with_multiple_ids() {
+    let dir = project("- fact one\n- fact two\n");
+
+    let output = facts_cmd(&dir).arg("list").output().unwrap();
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let lines: Vec<&str> = stdout.lines().collect();
+    let id1: &str = lines[0].split_whitespace().next().unwrap();
+    let id2: &str = lines[1].split_whitespace().next().unwrap();
+
+    facts_cmd(&dir)
+        .args(["edit", id1, id2, "--new-id", "shared"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "--new-id cannot be used with multiple IDs",
+        ));
 }

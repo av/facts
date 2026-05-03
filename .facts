@@ -414,3 +414,44 @@
 - label: add with --id prints the explicit ID
   command: grep -q "explicit_id\|explicit.*id\|opts\.id" src/add.rs && grep -q "println.*{id}" src/main.rs
   tags: [implemented]
+
+## list/check output
+
+### tags display
+- label: list appends lifecycle tags (dimmed) to each fact line
+  command: grep -q "fact\.tags\|tag.*dim\|dim.*tag" src/list.rs
+  tags: [implemented]
+- label: check appends lifecycle tags (dimmed) to each fact line
+  command: grep -q "fact\.tags\|tag.*dim\|dim.*tag" src/check.rs
+  tags: [implemented]
+- label: tags are shown unconditionally — no flag needed
+  command: ! grep -q "show.tags\|display.tags\|--show-tags" src/list.rs
+  tags: [implemented]
+
+## fmt
+
+- label: fmt subcommand parses, validates (lint), and normalizes all .facts files
+  command: grep -q "Fmt" src/main.rs && test -f src/fmt.rs
+  tags: [implemented]
+- label: fmt validates before writing — aborts on lint errors
+  command: grep -q "lint\|validate" src/fmt.rs
+  tags: [implemented]
+- label: fmt writes back deterministic output (parse + write)
+  command: grep -q "writer::write\|write(" src/fmt.rs
+  tags: [implemented]
+
+## edit
+
+### batch
+- label: edit accepts multiple IDs as positional arguments
+  command: grep -q "ids.*Vec\|num_args" src/main.rs
+  tags: [implemented]
+- label: batch edit applies the same operation to all targeted facts
+  command: grep -q "for.*id\|ids\.iter\|for.*target" src/edit.rs
+  tags: [implemented]
+- label: batch edit uses fail-all-before-writing semantics
+  command: grep -q "resolve.*all\|validate.*before\|all_locations\|resolved" src/edit.rs
+  tags: [implemented]
+- label: batch edit groups mutations by file for cross-file operations
+  command: grep -q "group.*file\|by_file\|sheet_idx" src/edit.rs
+  tags: [implemented]

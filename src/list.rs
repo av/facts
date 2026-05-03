@@ -99,7 +99,7 @@ pub fn run(opts: &ListOptions) -> Result<()> {
                 continue;
             }
 
-            let display = format_fact_line(sheet, &path, id, &fact.label, id_width);
+            let display = format_fact_line(sheet, &path, id, &fact.label, &fact.tags, id_width);
             println!("{display}");
         }
     }
@@ -147,6 +147,7 @@ fn format_fact_line(
     section_path: &[String],
     id: &str,
     label: &str,
+    tags: &[String],
     id_width: usize,
 ) -> String {
     let file_prefix = sheet.display_name();
@@ -162,15 +163,26 @@ fn format_fact_line(
     let dim_id = color::dim(&padded_id);
     let dim_sep = color::dim(">");
 
+    let tag_suffix = if tags.is_empty() {
+        String::new()
+    } else {
+        let tag_str = tags
+            .iter()
+            .map(|t| format!("@{t}"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        format!("  {}", color::dim(&tag_str))
+    };
+
     if path_parts.is_empty() {
-        format!("{dim_id}  {label}")
+        format!("{dim_id}  {label}{tag_suffix}")
     } else {
         let colored_path = path_parts
             .iter()
             .map(|p| color::bold(p))
             .collect::<Vec<_>>()
             .join(&format!(" {dim_sep} "));
-        format!("{dim_id}  {colored_path} {dim_sep} {label}")
+        format!("{dim_id}  {colored_path} {dim_sep} {label}{tag_suffix}")
     }
 }
 
@@ -197,7 +209,10 @@ mod tests {
         assert!(section_matches("facts/cli/init", "cli/init"));
         assert!(section_matches("facts/cli/init", "cli"));
         assert!(section_matches("facts/skills/facts-discover", "skills"));
-        assert!(section_matches("facts/skills/facts-discover", "facts-discover"));
+        assert!(section_matches(
+            "facts/skills/facts-discover",
+            "facts-discover"
+        ));
     }
 
     #[test]

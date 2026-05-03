@@ -2,6 +2,7 @@ mod add;
 mod check;
 mod color;
 mod edit;
+mod fmt;
 mod get;
 mod id;
 mod init;
@@ -116,10 +117,11 @@ enum Command {
         id: String,
     },
 
-    /// Modify a fact by ID.
+    /// Modify one or more facts by ID.
     Edit {
-        /// The ID of the fact to edit.
-        id: String,
+        /// The ID(s) of the fact(s) to edit.
+        #[arg(num_args = 1..)]
+        ids: Vec<String>,
 
         /// New label text.
         #[arg(long)]
@@ -152,6 +154,9 @@ enum Command {
         #[arg(long)]
         file: Option<String>,
     },
+
+    /// Parse, validate, and normalize all .facts files.
+    Fmt,
 
     /// Scaffold a .facts file and install agent skills.
     Init,
@@ -232,7 +237,7 @@ fn main() -> anyhow::Result<()> {
             get::run(&id)?;
         }
         Some(Command::Edit {
-            id,
+            ids,
             label,
             command,
             new_id,
@@ -253,7 +258,7 @@ fn main() -> anyhow::Result<()> {
                 None => None,
             };
             let opts = edit::EditOptions {
-                target_id: id,
+                target_ids: ids,
                 label,
                 command,
                 new_id,
@@ -269,6 +274,9 @@ fn main() -> anyhow::Result<()> {
             if !all_passed {
                 std::process::exit(1);
             }
+        }
+        Some(Command::Fmt) => {
+            fmt::run()?;
         }
         Some(Command::Init) => {
             init::run()?;

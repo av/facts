@@ -104,21 +104,16 @@ pub fn run_in(opts: &MoveOptions, root: &Path) -> Result<()> {
         }
     } else {
         // Same file as source.
-        sheets[source_sheet_idx]
-            .1
-            .filename
-            .clone()
+        sheets[source_sheet_idx].1.filename.clone()
     };
 
     // Find target sheet index (or mark for creation).
-    let target_sheet_idx = sheets
-        .iter()
-        .position(|(path, _)| {
-            path.file_name()
-                .and_then(|n| n.to_str())
-                .map(|n| n == target_filename)
-                .unwrap_or(false)
-        });
+    let target_sheet_idx = sheets.iter().position(|(path, _)| {
+        path.file_name()
+            .and_then(|n| n.to_str())
+            .map(|n| n == target_filename)
+            .unwrap_or(false)
+    });
 
     let is_cross_file = match target_sheet_idx {
         Some(idx) => idx != source_sheet_idx,
@@ -324,7 +319,10 @@ mod tests {
         run_in(&opts, dir.path()).unwrap();
 
         let result = fs::read_to_string(&facts_path).unwrap();
-        assert!(!result.contains("# alpha"), "empty source section should be removed");
+        assert!(
+            !result.contains("# alpha"),
+            "empty source section should be removed"
+        );
         assert!(result.contains("# beta"));
         assert!(result.contains("fact to move"));
         assert!(result.contains("existing beta fact"));
@@ -384,7 +382,10 @@ mod tests {
         run_in(&opts, dir.path()).unwrap();
 
         let result = fs::read_to_string(&facts_path).unwrap();
-        assert!(!result.contains("# only"), "empty section should be cleaned up");
+        assert!(
+            !result.contains("# only"),
+            "empty section should be cleaned up"
+        );
         assert!(result.contains("# keep"));
         assert!(result.contains("fact to move"));
     }

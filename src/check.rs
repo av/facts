@@ -23,6 +23,7 @@ pub struct CheckOptions {
 struct CheckResult {
     id: String,
     display_path: String,
+    tags: Vec<String>,
     status: CheckStatus,
 }
 
@@ -76,6 +77,20 @@ fn format_display_path_plain(sheet: &FactSheet, section_path: &[String], label: 
     }
     parts.push(label);
     parts.join(" > ")
+}
+
+/// Format tag suffix for display (dimmed @tag @tag).
+fn format_tag_suffix(tags: &[String]) -> String {
+    if tags.is_empty() {
+        String::new()
+    } else {
+        let tag_str = tags
+            .iter()
+            .map(|t| format!("@{t}"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        format!("  {}", color::dim(&tag_str))
+    }
 }
 
 /// Execute a command via $SHELL (fallback to sh) and return (exit_code, stderr).
@@ -251,6 +266,7 @@ pub fn run(opts: &CheckOptions) -> Result<bool> {
             results.push(CheckResult {
                 id,
                 display_path,
+                tags: fact.tags.clone(),
                 status,
             });
         }
@@ -280,11 +296,13 @@ pub fn run(opts: &CheckOptions) -> Result<bool> {
         for r in &passed {
             if let CheckStatus::Passed { command } = &r.status {
                 let padded_id = format!("{:width$}", r.id, width = id_width);
+                let tag_suffix = format_tag_suffix(&r.tags);
                 println!(
-                    "  {} {} {}",
+                    "  {} {} {}{}",
                     color::green(&format!("✓ {padded_id}")),
                     r.display_path,
                     color::dim(&format!("({command})")),
+                    tag_suffix,
                 );
             }
         }
@@ -301,10 +319,12 @@ pub fn run(opts: &CheckOptions) -> Result<bool> {
             } = &r.status
             {
                 let padded_id = format!("{:width$}", r.id, width = id_width);
+                let tag_suffix = format_tag_suffix(&r.tags);
                 println!(
-                    "  {} {}",
+                    "  {} {}{}",
                     color::red(&format!("✗ {padded_id}")),
                     r.display_path,
+                    tag_suffix,
                 );
                 let pad = " ".repeat(detail_indent);
                 println!("{pad}{} {exit_code}", color::dim("exit:"),);
@@ -323,10 +343,12 @@ pub fn run(opts: &CheckOptions) -> Result<bool> {
         println!("{}", color::bold(&color::yellow("manual")));
         for r in &manual {
             let padded_id = format!("{:width$}", r.id, width = id_width);
+            let tag_suffix = format_tag_suffix(&r.tags);
             println!(
-                "  {} {}",
+                "  {} {}{}",
                 color::yellow(&format!("? {padded_id}")),
                 r.display_path,
+                tag_suffix,
             );
         }
         println!();

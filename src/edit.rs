@@ -13,8 +13,8 @@ use crate::writer;
 
 /// Options for the edit subcommand.
 pub struct EditOptions {
-    /// The ID of the fact to edit.
-    pub target_id: String,
+    /// The ID(s) of the fact(s) to edit.
+    pub target_ids: Vec<String>,
     /// New label (replaces existing).
     pub label: Option<String>,
     /// New command (replaces existing).
@@ -37,6 +37,19 @@ pub fn run(opts: &EditOptions) -> Result<()> {
 
 /// Run the edit subcommand in a given root directory.
 pub fn run_in(opts: &EditOptions, root: &Path) -> Result<()> {
+    if opts.target_ids.is_empty() {
+        anyhow::bail!("at least one ID is required");
+    }
+
+    if opts.target_ids.len() > 1 {
+        if opts.new_id.is_some() {
+            anyhow::bail!("--new-id cannot be used with multiple IDs");
+        }
+        if opts.label.is_some() {
+            anyhow::bail!("--label cannot be used with multiple IDs");
+        }
+    }
+
     if let Some(ref label) = opts.label {
         if label.contains('\n') || label.contains('\r') {
             anyhow::bail!("label cannot contain newlines");
@@ -99,33 +112,48 @@ pub fn run_in(opts: &EditOptions, root: &Path) -> Result<()> {
 
     let assigned_ids = id::assign_ids(&all_fact_labels);
 
-    let match_idx = assigned_ids
-        .iter()
-        .position(|id| *id == opts.target_id)
-        .ok_or_else(|| anyhow::anyhow!("no fact found with ID '{}'", opts.target_id))?;
+    // Resolve all target IDs before making any changes (fail-all-before-writing).
+    let mut resolved: Vec<usize> = Vec::new();
+    for target_id in &opts.target_ids {
+        let match_idx = assigned_ids
+            .iter()
+            .position(|id| id == target_id)
+            .ok_or_else(|| anyhow::anyhow!("no fact found with ID '{}'", target_id))?;
+        resolved.push(match_idx);
+    }
 
     // Reject duplicate --new-id: check that the new ID doesn't already exist
     // among OTHER facts (not the one being edited).
     if let Some(ref new_id) = opts.new_id {
         for (i, (_, explicit_id)) in all_fact_labels.iter().enumerate() {
-            if i != match_idx && explicit_id.as_deref() == Some(new_id.as_str()) {
+            if !resolved.contains(&i) && explicit_id.as_deref() == Some(new_id.as_str()) {
                 anyhow::bail!("ID already exists: {}", new_id);
             }
         }
     }
 
-    let (sheet_idx, ref location) = fact_locations[match_idx];
-    let (ref file_path, ref mut sheet) = sheets[sheet_idx];
+    // Apply edits to all resolved facts.
+    for &match_idx in &resolved {
+        let (sheet_idx, ref location) = fact_locations[match_idx];
+        let (_, ref mut sheet) = sheets[sheet_idx];
 
-    let fact = locate::get_fact_mut(sheet, location);
-    apply_edits(fact, opts);
+        let fact = locate::get_fact_mut(sheet, location);
+        apply_edits(fact, opts);
 
-    let fact = locate::get_fact_mut(sheet, location);
-    fact.raw = writer::fact_to_raw(fact);
+        let fact = locate::get_fact_mut(sheet, location);
+        fact.raw = writer::fact_to_raw(fact);
+    }
 
-    let output = writer::write(sheet);
-    std::fs::write(file_path, &output)
-        .with_context(|| format!("failed to write {}", file_path.display()))?;
+    // Write back only files that were modified.
+    let modified_sheets: std::collections::HashSet<usize> =
+        resolved.iter().map(|&idx| fact_locations[idx].0).collect();
+
+    for sheet_idx in modified_sheets {
+        let (ref file_path, ref sheet) = sheets[sheet_idx];
+        let output = writer::write(sheet);
+        std::fs::write(file_path, &output)
+            .with_context(|| format!("failed to write {}", file_path.display()))?;
+    }
 
     Ok(())
 }
@@ -217,7 +245,7 @@ mod tests {
 
         let target_id = find_id_for_label(content, "original label");
         let opts = EditOptions {
-            target_id,
+            target_ids: vec![target_id],
             label: Some("new label".to_string()),
             command: None,
             new_id: None,
@@ -239,7 +267,7 @@ mod tests {
 
         let target_id = find_id_for_label(content, "test fact");
         let opts = EditOptions {
-            target_id,
+            target_ids: vec![target_id],
             label: None,
             command: Some("echo new".to_string()),
             new_id: None,
@@ -261,7 +289,7 @@ mod tests {
 
         let target_id = find_id_for_label(content, "tagged fact");
         let opts = EditOptions {
-            target_id,
+            target_ids: vec![target_id],
             label: None,
             command: None,
             new_id: None,
@@ -283,7 +311,7 @@ mod tests {
 
         let target_id = find_id_for_label(content, "tagged fact");
         let opts = EditOptions {
-            target_id,
+            target_ids: vec![target_id],
             label: None,
             command: None,
             new_id: None,
@@ -304,7 +332,7 @@ mod tests {
 
         let target_id = find_id_for_label(content, "tagged fact");
         let opts = EditOptions {
-            target_id,
+            target_ids: vec![target_id],
             label: None,
             command: None,
             new_id: None,
@@ -325,7 +353,7 @@ mod tests {
 
         let target_id = find_id_for_label(content, "tagged fact");
         let opts = EditOptions {
-            target_id,
+            target_ids: vec![target_id],
             label: None,
             command: None,
             new_id: None,
@@ -347,7 +375,7 @@ mod tests {
 
         let target_id = find_id_for_label(content, "a plain fact");
         let opts = EditOptions {
-            target_id,
+            target_ids: vec![target_id],
             label: None,
             command: None,
             new_id: None,
@@ -368,7 +396,7 @@ mod tests {
 
         let target_id = find_id_for_label(content, "a plain fact");
         let opts = EditOptions {
-            target_id,
+            target_ids: vec![target_id],
             label: None,
             command: Some("echo check".to_string()),
             new_id: None,
@@ -391,7 +419,7 @@ mod tests {
 
         let target_id = find_id_for_label(content, "a plain fact");
         let opts = EditOptions {
-            target_id,
+            target_ids: vec![target_id],
             label: None,
             command: None,
             new_id: Some("myid".to_string()),
@@ -413,7 +441,7 @@ mod tests {
 
         let target_id = "keep-me".to_string();
         let opts = EditOptions {
-            target_id,
+            target_ids: vec![target_id],
             label: Some("changed label".to_string()),
             command: None,
             new_id: None,
@@ -435,7 +463,7 @@ mod tests {
         let (dir, _) = setup_test_dir(content);
 
         let opts = EditOptions {
-            target_id: "zzz".to_string(),
+            target_ids: vec!["zzz".to_string()],
             label: Some("new".to_string()),
             command: None,
             new_id: None,
@@ -456,7 +484,7 @@ mod tests {
 
         let target_id = find_id_for_label(content, "a tagged fact");
         let opts = EditOptions {
-            target_id,
+            target_ids: vec![target_id],
             label: None,
             command: Some("echo check".to_string()),
             new_id: None,
@@ -481,7 +509,7 @@ mod tests {
 
         let target_id = find_id_for_label(content, "fact in section");
         let opts = EditOptions {
-            target_id,
+            target_ids: vec![target_id],
             label: Some("edited fact".to_string()),
             command: None,
             new_id: None,
