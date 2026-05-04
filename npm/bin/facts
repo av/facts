@@ -1,0 +1,3 @@
+#!/usr/bin/env node
+console.error("facts: postinstall did not complete. Run 'npm rebuild @avcodes/facts' or reinstall.");
+process.exit(1);

@@ -1,6 +1,6 @@
 {
   "name": "@avcodes/facts",
-  "version": "0.4.8",
+  "version": "0.4.9",
   "description": "A CLI for fact-driven development with coding agents",
   "license": "MIT",
   "repository": {
