@@ -9,7 +9,7 @@ Read your entire project spec in 30 seconds. Verify it in one command.
 
 </div>
 
-Your project has 48 facts. 31 are implemented — code-backed, verified by command. 12 are specs your agent is working through right now. 5 are rough drafts you'll refine next week. You know all of this because you ran `facts check`. One file. One command. Complete picture.
+Your project has 48 facts, 31 of them implemented: code-backed, verified by command. 12 are specs your agent is working through. 5 are rough drafts you'll refine later. You know all of this because you ran `facts check`.
 
 ```
 # auth
@@ -30,9 +30,7 @@ Your project has 48 facts. 31 are implemented — code-backed, verified by comma
 - structured error responses with error codes @spec
 ```
 
-That's a `.facts` file. Each line is one atomic claim about your project. Tags track where each fact is in its lifecycle: `@draft` (rough idea), `@spec` (precise, ready to build), `@implemented` (true, code-backed). Your agent manages the transitions. You stay in control.
-
-No 2,000-word PRD that drifts and nobody checks. No walls of text your agent skims and misinterprets. Just a flat list of truths — short enough to read in full, structured enough to manage, and when a fact has a shell command, the machine verifies it for you so the agent doesn't have to.
+That's a `.facts` file, where each line is one atomic claim about your project. Tags track where each fact is in its lifecycle: `@draft` (rough idea), `@spec` (precise, ready to build), `@implemented` (true, code-backed). Your agent manages the transitions. The format is a flat list of claims: short enough to read in full, structured enough to manage, and when a fact has a shell command, the machine verifies it so the agent doesn't have to.
 
 ## Install
 
@@ -56,7 +54,7 @@ npm install -g @avcodes/facts        # or npm
 pip install facts-cli                 # or pip
 ```
 
-Rust. Single binary. Two dependencies. Linux, macOS, Windows.
+It's a single Rust binary with two dependencies, running on Linux, macOS, and Windows.
 
 Then scaffold your project:
 
@@ -70,16 +68,16 @@ facts check
 
 ## Agent skills
 
-This is where facts changes how you work. Four skills ship with every install — your agent uses them to manage the full lifecycle without you directing every step.
+Four skills ship with every install. Your agent uses them to manage the full lifecycle without you directing every step.
 
 | Skill | What it does |
 |-------|-------------|
-| **facts** | Core operations — read the spec, check it, add and edit facts |
+| **facts** | Core operations: read the spec, check it, add and edit facts |
 | **facts-discover** | Scan the codebase, classify every fact by lifecycle stage, add missing truths |
 | **facts-refine** | Pick up `@draft` facts, sharpen them into precise `@spec` facts with you |
 | **facts-implement** | Pick up `@spec` facts, build them in code, verify, tag `@implemented` |
 
-The workflow is a loop: you write rough ideas as `@draft`. The agent refines them into specs. Then it implements them, runs `facts check`, and tags what it built. You see the progress in the fact sheet — not buried in commit messages or PR descriptions, but right there in the spec itself.
+The workflow is a loop: you write rough ideas as `@draft`. The agent refines them into specs. Then it implements them, runs `facts check`, and tags what it built. You see the progress in the fact sheet, right there in the spec itself.
 
 ```
 @draft → @spec → @implemented
@@ -93,15 +91,15 @@ Every fact moves through this pipeline. At any point you can run `facts check` a
 
 <img src="assets/readme/howto-1.png" alt="1. Describe" width="700" />
 
-**Describe** what should be true. Write claims as plain strings — one fact per line. Use `#` headings to organize by domain. Tag each fact with its lifecycle stage. For facts the machine can verify, add a `command` that exits 0 when the claim holds.
+**Describe** what should be true by writing claims as plain strings, one fact per line. Use `#` headings to organize by domain, tag each fact with its lifecycle stage, and for facts the machine can verify, add a `command` that exits 0 when the claim holds.
 
 <img src="assets/readme/howto-2.png" alt="2. Verify" width="700" />
 
-**Verify** with `facts check`. It lints all files, runs every command, and groups results by status: green pass, red fail, yellow manual. Facts without commands are verified by the agent against the codebase — no manual work for you. Exit 0 when everything passes, non-zero when anything fails. Plug it into CI or let your agent run it after every change.
+**Verify** your facts with `facts check`, which lints all files, runs every command, and groups results by status: green pass, red fail, yellow manual. Facts without commands are verified by the agent against the codebase. It exits 0 when everything passes, non-zero when anything fails. Plug it into CI or let your agent run it after every change.
 
 <img src="assets/readme/howto-3.png" alt="3. Implement" width="700" />
 
-**Implement** against the spec. Your agent reads the fact sheet to understand the project, picks up `@spec` facts, builds them, and runs `facts check` to verify its own work. When a fact passes, it tags `@implemented`. The spec updates itself as the project evolves.
+**Implement** against the spec: your agent reads the fact sheet to understand the project, picks up `@spec` facts, builds them, and runs `facts check` to verify its own work. When a fact passes, it tags `@implemented`, and the spec updates itself as the project evolves.
 
 ---
 
@@ -120,7 +118,7 @@ A `.facts` file is valid Markdown *and* valid YAML per section.
 | Key | Required | Purpose |
 |-----|----------|---------|
 | `label` | yes | The claim |
-| `command` | no | Shell command — exit 0 = true |
+| `command` | no | Shell command, exit 0 = true |
 | `tags` | no | Freeform tokens for filtering |
 | `id` | no | Override the auto-generated ID |
 
@@ -128,7 +126,7 @@ A `.facts` file is valid Markdown *and* valid YAML per section.
 
 **Sections** use Markdown headings. Nesting creates hierarchy addressable by path (`api/auth`). Created when you add to them, removed when empty.
 
-**IDs** are short hashes of the label — stable as long as the label doesn't change.
+**IDs** are short hashes of the label, stable as long as the label doesn't change.
 
 ---
 
@@ -154,7 +152,7 @@ facts uninit                             # remove facts from project
 
 ## Dogfooding
 
-This repo uses a `.facts` file to describe itself. 224 facts. 154 verified by command. 0 failing.
+This repo uses a `.facts` file to describe itself: 224 facts, 154 verified by command, none failing.
 
 ```
 $ facts check
@@ -162,7 +160,7 @@ $ facts check
 154 passed, 0 failed, 70 manual
 ```
 
-Clone the repo, install facts, run `facts check`. That's the whole pitch — see it work on itself.
+Clone the repo, install facts, and run `facts check` to see it work on itself.
 
 ---
 

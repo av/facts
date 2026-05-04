@@ -29,8 +29,10 @@
 - label: sections are addressable by path (e.g. distribution/npm)
   command: grep -q "section.*path\|section_path\|--section" src/list.rs
 - the CLI treats sections as first-class citizens
-- sections are created implicitly when a fact is added to them
-- sections are removed when their last fact is deleted
+- label: sections are created implicitly when a fact is added to them
+  command: grep -q 'ensure_section_path' src/add.rs
+- label: sections are removed when their last fact is deleted
+  command: grep -q 'cleanup_empty_sections' src/remove.rs
 
 ### facts
 - label: each fact is a YAML sequence item (- prefixed)
@@ -135,7 +137,8 @@
   command: grep -q "facts.*facts-discover.*facts-implement.*facts-refine\|SKILLS" src/init.rs
 - label: creates .claude/skills/ symlinks for Claude Code integration
   command: grep -q "claude.*skills\|\.claude" src/init.rs
-- init is idempotent — safe to run multiple times
+- label: init is idempotent — safe to run multiple times
+  command: grep -q 'up to date\|skip' src/init.rs
 - label: init adds a fact-driven development section to CLAUDE.md or AGENTS.md
   command: grep -q 'install_agent_docs\|AGENT_MD_FILES' src/init.rs
 - label: init creates AGENTS.md if no agent markdown file exists
@@ -145,10 +148,13 @@
   command: grep -q 'facts:start.*facts:end\|SECTION_START\|SECTION_END' src/init.rs
 
 ### check
-- lints all files first — aborts early on lint errors
-- groups output by status: passed, failed, manual
+- label: lints all files first — aborts early on lint errors
+  command: grep -q 'lint::lint_content' src/check.rs && grep -q 'fix lint errors first' src/check.rs
+- label: groups output by status: passed, failed, manual
+  command: grep -q '"passed"' src/check.rs && grep -q '"failed"' src/check.rs && grep -q '"manual"' src/check.rs
 - each fact line shows ID and full path (file > section > label)
-- file prefix omitted for .facts (default), shown for other files
+- label: file prefix omitted for .facts (default), shown for other files
+  command: grep -q 'filename == ".facts"' src/model.rs && grep -q 'display_name' src/check.rs
 - passed facts show the command inline
 - failed facts show command, exit code, and stderr
 - manual facts are listed without detail
@@ -156,8 +162,10 @@
 - label: legend at the bottom explains manual marker
   command: grep -q "no command\|verified manually" src/check.rs
 - exit 0 if all command-facts pass, non-zero if any fail
-- --tags flag accepts a boolean filter expression: "mvp and not blocked"
-- --timeout flag sets a per-command timeout
+- label: --tags flag accepts a boolean filter expression: "mvp and not blocked"
+  command: facts check --help 2>&1 | grep -q '\-\-tags'
+- label: --timeout flag sets a per-command timeout
+  command: facts check --help 2>&1 | grep -q '\-\-timeout'
 - label: filter expressions support and, or, not, and parentheses
   command: grep -q "and\|or\|not\|parse_expr" src/tags.rs
 
@@ -166,34 +174,44 @@
   command: ! grep -q "CheckStatus\|✓\|✗" src/list.rs
 - shows facts in file order
 - each fact line shows ID and full path (file > section > label)
-- file prefix omitted for .facts (default), shown for other files
+- label: file prefix omitted for .facts (default), shown for other files
+  command: grep -q 'filename == ".facts"' src/model.rs && grep -q 'display_name' src/list.rs
 - label: supports filtering: --file, --section, --has-command, --manual
   command: grep -q "file_filter" src/list.rs && grep -q "has_command" src/list.rs && grep -q "manual" src/list.rs
-- --tags flag accepts a boolean filter expression
+- label: --tags flag accepts a boolean filter expression
+  command: facts list --help 2>&1 | grep -q '\-\-tags'
 - label: default target is all *.facts files
   command: grep -q "discover_fact_files" src/list.rs
 
 ### add
 - label: defaults to .facts at the top level
   command: grep -q "unwrap_or.*\".facts\"" src/add.rs
-- --section flag targets a specific section (created if needed)
-- --file flag targets a specific *.facts file (created if needed)
-- --command flag adds a validation command
+- label: --section flag targets a specific section (created if needed)
+  command: facts add --help 2>&1 | grep -q '\-\-section'
+- label: --file flag targets a specific *.facts file (created if needed)
+  command: facts add --help 2>&1 | grep -q '\-\-file'
+- label: --command flag adds a validation command
+  command: facts add --help 2>&1 | grep -q '\-\-command'
 - label: --id flag sets an explicit ID
   command: grep -q "\-\-id\|explicit_id" src/add.rs
-- --tags flag adds tags
+- label: --tags flag adds tags
+  command: facts add --help 2>&1 | grep -q '\-\-tags'
 - appends to the end of the target section
 - file order is canonical
 
 ### remove
-- takes an ID as argument
-- outputs the removed fact
+- label: takes an ID as argument
+  command: facts remove --help 2>&1 | grep -q '<ID>'
+- label: outputs the removed fact
+  command: grep -q 'println.*removed_label' src/remove.rs
 - label: silent — no confirmation prompt
   command: ! grep -q "confirm\|prompt\|stdin\|read_line" src/remove.rs
 
 ### edit
-- takes an ID as argument
-- --label, --command, --id, --tags flags modify respective fields
+- label: takes an ID as argument
+  command: facts edit --help 2>&1 | grep -q 'IDS'
+- label: --label, --command, --id, --tags flags modify respective fields
+  command: facts edit --help 2>&1 | grep -q '\-\-label' && facts edit --help 2>&1 | grep -q '\-\-new-id'
 - label: --add-tag appends tags without removing existing ones
   command: grep -q "add.tag\|add_tag" src/edit.rs
 - label: --remove-tag removes specific tags
@@ -205,7 +223,8 @@
 - tags migrate from inline to tags key when fact becomes a mapping
 
 ### lint
-- validates that fact sheets are parseable
+- label: validates that fact sheets are parseable
+  command: facts lint --help 2>&1 | grep -q 'Validate'
 - reports clear error messages for structural issues
 - label: flags mixed inline and mapping tags on the same fact
   command: grep -q "mixed\|inline.*mapping\|Mixed" src/lint.rs
@@ -403,6 +422,10 @@
   tags: [implemented]
 
 ## add
+- label: rejects absolute paths and subdirectory paths for --file
+  command: grep -q 'must be relative' src/add.rs && grep -q 'no subdirectory paths' src/add.rs
+- label: section depth cannot exceed 6 levels
+  command: grep -q 'parts.len() > 6' src/add.rs
 
 ### output
 - label: add prints the new fact's assigned ID to stdout
@@ -441,6 +464,8 @@
   tags: [implemented]
 
 ## edit
+- label: batch edit cannot use --label or --new-id with multiple IDs
+  command: grep -q 'cannot be used with multiple IDs' src/edit.rs
 
 ### batch
 - label: edit accepts multiple IDs as positional arguments
@@ -455,3 +480,47 @@
 - label: batch edit groups mutations by file for cross-file operations
   command: grep -q "group.*file\|by_file\|sheet_idx" src/edit.rs
   tags: [implemented]
+
+## list
+- label: section filter is case-insensitive contiguous sub-path matching
+  command: grep -q 'eq_ignore_ascii_case' src/list.rs
+
+## check
+- label: timeout exit code is 124
+  command: grep -q '(124,' src/check.rs
+
+# distribution
+
+## npm
+- label: npm package includes a placeholder bin/facts stub so npm creates the global symlink before postinstall downloads the real binary
+  command: test -f npm/bin/facts && head -1 npm/bin/facts | grep -q node
+- label: postinstall script downloads the platform-specific binary from GitHub releases
+  command: grep -q 'github.com.*releases.*download' npm/install.js
+- label: published under the avcodes npm scope
+  command: grep -q '@avcodes/facts' npm/package.json
+
+## pypi
+- label: custom build_py downloads the platform-specific binary from GitHub releases during wheel build
+  command: grep -q 'github.com.*releases.*download' pypi/setup.py && grep -q 'BuildPyWithBinary' pypi/setup.py
+- label: PyPI package name is facts-cli
+  command: grep -q 'name = "facts-cli"' pypi/pyproject.toml
+
+## install.sh
+- label: rejects Windows and suggests npm or pip instead
+  command: grep -q 'MINGW\|MSYS\|CYGWIN' install.sh && grep -q 'npm\|pip' install.sh
+
+# releasing
+- label: Linux targets build on ubuntu-22.04 for glibc 2.35 compatibility with Debian bookworm-based containers
+  command: grep -A1 'linux-gnu' .github/workflows/release.yml | grep -q 'ubuntu-22.04'
+
+# architecture
+- label: skills are embedded in the binary via include_str!() macros
+  command: grep -q 'include_str!' src/init.rs
+- label: dev dependencies: tempfile, assert_cmd, predicates
+  command: grep -q 'tempfile' Cargo.toml && grep -q 'assert_cmd' Cargo.toml && grep -q 'predicates' Cargo.toml
+
+# format
+
+## file
+- label: fact file discovery sorts .facts first, then alphabetically
+  command: grep -q 'sort\|\.facts.*first\|display_name' src/project.rs

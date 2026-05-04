@@ -1,6 +1,7 @@
 #!/bin/sh
+
 # Install script for facts CLI
-# Usage: curl -fsSL https://raw.githubusercontent.com/av/facts/main/install.sh | sh
+# Usage: curl -fsSL https://av.codes/facts.sh | sh
 
 set -e
 
