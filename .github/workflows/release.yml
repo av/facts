@@ -107,7 +107,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22"
-          registry-url: "https://registry.npmjs.org"
 
       - name: Set version from tag
         run: |
@@ -116,7 +115,9 @@ jobs:
           npm version "$VERSION" --no-git-tag-version --allow-same-version
 
       - name: Publish
-        run: npm publish --access public --provenance
+        run: |
+          echo "registry=https://registry.npmjs.org/" > .npmrc
+          npm publish --access public --provenance
         working-directory: npm
 
   publish-pypi:
