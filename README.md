@@ -2,52 +2,53 @@
 
 <img src="assets/readme/hero.png" alt="facts" width="800" />
 
-Testable specs for AI coding agents.
+Read your entire project spec in 30 seconds. Verify it in one command.
 
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/av/facts)](https://github.com/av/facts/releases)
 
 </div>
 
-A `.facts` file is a flat list of claims about your project. Each claim can have a shell command that proves it. `facts check` runs them all.
+Your project has 48 facts. 31 are implemented — code-backed, verified by command. 12 are specs your agent is working through right now. 5 are rough drafts you'll refine next week. You know all of this because you ran `facts check`. One file. One command. Complete picture.
 
-```yaml
+```
 # auth
-- label: JWT tokens expire after 1 hour
-  command: grep -q 'expires.*3600' src/auth.rs
-- label: refresh tokens are rotated on use
-  command: grep -q 'rotate_refresh' src/auth.rs
-- passwords are bcrypt-hashed, cost factor 12
+- users authenticate via OAuth2 @implemented
+- sessions expire after 24 hours @implemented
+- failed logins rate-limited to 5 per minute @spec
+- label: bcrypt password hashing with cost factor 12
+  command: grep -q 'bcrypt.*12' src/auth.ts
+
+# data
+- all timestamps stored in UTC @implemented
+- soft deletes only, no rows dropped @spec
+- PII encrypted at rest @draft
 
 # api
-- label: rate limiter caps at 100 req/min
-  command: grep -q 'rate_limit.*100' src/middleware.rs
-- all endpoints return structured JSON errors
+- REST with versioned endpoints @implemented
+- rate limiting on all public routes @spec
+- structured error responses with error codes @spec
 ```
 
-```
-$ facts check
+That's a `.facts` file. Each line is one atomic claim about your project. Tags track where each fact is in its lifecycle: `@draft` (rough idea), `@spec` (precise, ready to build), `@implemented` (true, code-backed). Your agent manages the transitions. You stay in control.
 
-passed
-  ✓ k2z  auth > JWT tokens expire after 1 hour
-  ✓ r1b  auth > refresh tokens are rotated on use
-
-failed
-  ✗ a8d  api > rate limiter caps at 100 req/min
-
-manual
-  ? e4a  auth > passwords are bcrypt-hashed, cost factor 12
-  ? p3f  api > all endpoints return structured JSON errors
-
-2 passed, 1 failed, 2 manual
-```
-
-Exit 0 when everything passes. Non-zero when anything fails. That's the whole idea.
+No 2,000-word PRD that drifts and nobody checks. No walls of text your agent skims and misinterprets. Just a flat list of truths — short enough to read in full, structured enough to manage, and when a fact has a shell command, the machine verifies it for you so the agent doesn't have to.
 
 ## Install
 
+Give your agent the facts skill:
+
 ```sh
-curl -fsSL https://raw.githubusercontent.com/av/facts/main/install.sh | sh
+npx skills add av/facts
+```
+
+Then ask it to **Init facts**. It detects your stack, creates a `.facts` file with initial project truths, and sets up the full workflow.
+
+<details>
+<summary>Manual install</summary>
+
+```sh
+curl -fsSL https://av.codes/facts.sh | sh
 ```
 
 ```sh
@@ -55,9 +56,9 @@ npm install -g @avcodes/facts        # or npm
 pip install facts-cli                 # or pip
 ```
 
-Rust. Single binary. Two dependencies (`clap`, `anyhow`). Linux, macOS, Windows.
+Rust. Single binary. Two dependencies. Linux, macOS, Windows.
 
-## Quick start
+Then scaffold your project:
 
 ```sh
 cd your-project
@@ -65,33 +66,42 @@ facts init
 facts check
 ```
 
-`init` detects your stack (Cargo, package.json, pyproject.toml, etc.), creates a `.facts` file with initial project truths, and installs agent skills. `check` tells you what's true right now.
+</details>
+
+## Agent skills
+
+This is where facts changes how you work. Four skills ship with every install — your agent uses them to manage the full lifecycle without you directing every step.
+
+| Skill | What it does |
+|-------|-------------|
+| **facts** | Core operations — read the spec, check it, add and edit facts |
+| **facts-discover** | Scan the codebase, classify every fact by lifecycle stage, add missing truths |
+| **facts-refine** | Pick up `@draft` facts, sharpen them into precise `@spec` facts with you |
+| **facts-implement** | Pick up `@spec` facts, build them in code, verify, tag `@implemented` |
+
+The workflow is a loop: you write rough ideas as `@draft`. The agent refines them into specs. Then it implements them, runs `facts check`, and tags what it built. You see the progress in the fact sheet — not buried in commit messages or PR descriptions, but right there in the spec itself.
+
+```
+@draft → @spec → @implemented
+```
+
+Every fact moves through this pipeline. At any point you can run `facts check` and know exactly where your project stands: what's done, what's in progress, and what's still just an idea.
 
 ---
 
-## The problem
-
-You wrote a spec. Your agent read it. Fifty commits later, half of it describes code that no longer exists. The doc says "REST API" but someone switched to GraphQL in week two. Nobody noticed because nobody checks.
-
-Long specs are the wrong abstraction for agentic development. They're too verbose for agents to parse reliably, too unstructured to validate, and they drift from code silently. You end up with a 2,000-word PRD that your agent skims, misinterprets, and builds against a version of the project that no longer exists.
-
-facts treats your spec like a type system treats your code. Each fact is a single, atomic claim. If it has a command, the command is the test. `facts check` is the compiler. Either your project matches the spec or it doesn't.
-
 ## How it works
 
-<table>
-<tr>
-<td width="33%"><img src="assets/readme/howto-1.png" alt="1. Describe" /></td>
-<td width="33%"><img src="assets/readme/howto-2.png" alt="2. Verify" /></td>
-<td width="33%"><img src="assets/readme/howto-3.png" alt="3. Implement" /></td>
-</tr>
-</table>
+<img src="assets/readme/howto-1.png" alt="1. Describe" width="700" />
 
-**Describe.** Write facts in a `.facts` file. Plain strings for claims humans verify. YAML mappings with a `command` key for claims the machine can check. Organize into sections with `#` headings.
+**Describe** what should be true. Write claims as plain strings — one fact per line. Use `#` headings to organize by domain. Tag each fact with its lifecycle stage. For facts the machine can verify, add a `command` that exits 0 when the claim holds.
 
-**Verify.** `facts check` lints all files first, then runs every command-fact. Commands execute via `$SHELL` in the project root. Exit 0 = the fact holds. Non-zero = it doesn't. Results are grouped: green pass, red fail, yellow manual.
+<img src="assets/readme/howto-2.png" alt="2. Verify" width="700" />
 
-**Implement.** Three lifecycle tags drive the agent workflow: `@draft` (rough idea) &rarr; `@spec` (precise, actionable) &rarr; `@implemented` (true, code-backed). Built-in skills handle each transition. The `.facts` file becomes spec, docs, and regression suite in one place.
+**Verify** with `facts check`. It lints all files, runs every command, and groups results by status: green pass, red fail, yellow manual. Facts without commands are verified by the agent against the codebase — no manual work for you. Exit 0 when everything passes, non-zero when anything fails. Plug it into CI or let your agent run it after every change.
+
+<img src="assets/readme/howto-3.png" alt="3. Implement" width="700" />
+
+**Implement** against the spec. Your agent reads the fact sheet to understand the project, picks up `@spec` facts, builds them, and runs `facts check` to verify its own work. When a fact passes, it tags `@implemented`. The spec updates itself as the project evolves.
 
 ---
 
@@ -99,9 +109,9 @@ facts treats your spec like a type system treats your code. Each fact is a singl
 
 A `.facts` file is valid Markdown *and* valid YAML per section.
 
-```yaml
+```
 # section
-- a plain string fact (verified manually)
+- a plain string fact @tag
 - label: a fact with a check command
   command: test -f src/main.rs
   tags: [core, mvp]
@@ -114,34 +124,11 @@ A `.facts` file is valid Markdown *and* valid YAML per section.
 | `tags` | no | Freeform tokens for filtering |
 | `id` | no | Override the auto-generated ID |
 
-**Sections** use Markdown headings. Nesting creates hierarchy addressable by path (`api/auth`). Sections are created when you add to them, removed when empty.
-
 **Tags** filter with boolean expressions: `--tags "core and not blocked"`. Three well-known tags (`@draft`, `@spec`, `@implemented`) drive the lifecycle, but any tag works.
 
-**IDs** are 3+ character hashes of the label, stable as long as the label doesn't change.
+**Sections** use Markdown headings. Nesting creates hierarchy addressable by path (`api/auth`). Created when you add to them, removed when empty.
 
----
-
-## Agent integration
-
-`facts init` installs skills that any compatible coding agent can use — Claude Code, Cursor, Windsurf, or anything that supports skill files.
-
-| Skill | Transition |
-|-------|------------|
-| **facts** | Core CLI operations — read, check, add, edit, remove |
-| **facts-discover** | Scan codebase &rarr; classify every fact by lifecycle stage |
-| **facts-refine** | `@draft` &rarr; `@spec` — sharpen rough ideas into precise specs |
-| **facts-implement** | `@spec` &rarr; `@implemented` — build specs into code |
-
-The agent reads the fact sheet to understand the project, implements against it, and runs `facts check` to verify its own work. The feedback loop is automatic: spec &rarr; code &rarr; verify &rarr; repeat.
-
-Add this to your `CLAUDE.md` or agent config:
-
-```
-Always run `facts check` after making changes.
-Fix any failing facts before moving on.
-Use lifecycle tags to track progress: @draft → @spec → @implemented.
-```
+**IDs** are short hashes of the label — stable as long as the label doesn't change.
 
 ---
 
@@ -149,7 +136,7 @@ Use lifecycle tags to track progress: @draft → @spec → @implemented.
 
 ```
 facts                                    # list all facts (default)
-facts check                              # run all checks, report pass/fail/manual
+facts check                              # verify everything
 facts check --tags "mvp and not blocked" # filter by tag expression
 facts add "claim" --section api          # add a fact
 facts edit <id> --add-tag spec           # modify a fact
@@ -157,9 +144,9 @@ facts remove <id>                        # remove a fact
 facts get <id>                           # look up a single fact
 facts move <id> --section new/path       # relocate a fact
 facts list --section api/auth            # filter by section
-facts lint                               # validate file structure
+facts lint                               # validate structure
 facts fmt                                # normalize all files
-facts init                               # scaffold project + install skills
+facts init                               # scaffold + install skills
 facts uninit                             # remove facts from project
 ```
 
@@ -175,7 +162,7 @@ $ facts check
 154 passed, 0 failed, 70 manual
 ```
 
-The fact sheet *is* the spec. Clone the repo and run `facts check` to see it work.
+Clone the repo, install facts, run `facts check`. That's the whole pitch — see it work on itself.
 
 ---
 
