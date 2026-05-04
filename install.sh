@@ -17,7 +17,7 @@ detect_platform() {
     Darwin) platform="darwin" ;;
     MINGW*|MSYS*|CYGWIN*)
       echo "Error: Windows detected. Use the npm or pip package instead." >&2
-      echo "  npm install -g @aspect-build/facts" >&2
+      echo "  npm install -g facts-cli" >&2
       echo "  pip install facts-cli" >&2
       exit 1
       ;;

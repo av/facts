@@ -1,11 +1,11 @@
 {
-  "name": "facts-cli",
-  "version": "0.1.0",
+  "name": "@avcodes/facts",
+  "version": "0.4.4",
   "description": "A CLI for fact-driven development with coding agents",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/av/facts.git"
+    "url": "git+https://github.com/av/facts.git"
   },
   "homepage": "https://github.com/av/facts",
   "bin": {
