@@ -20,7 +20,7 @@ from setuptools.command.build_py import build_py
 REPO = "av/facts"
 BINARY = "facts"
 # Read version from pyproject.toml to keep it in one place
-VERSION = "0.4.4"
+VERSION = "0.4.5"
 
 PLATFORM_MAP = {
     "Linux": "linux",
