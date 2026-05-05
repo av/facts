@@ -2,6 +2,12 @@
 
 <img src="assets/readme/hero.png" alt="facts" width="800" />
 
+
+
+https://github.com/user-attachments/assets/506cc21f-99e2-4ff1-b85c-5350eb8e94fb
+
+
+
 Read your entire project spec in 30 seconds. Verify it in one command.
 
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
