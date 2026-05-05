@@ -115,6 +115,12 @@ jobs:
           cd npm
           npm version "$VERSION" --no-git-tag-version --allow-same-version
 
+      - name: Prepare README
+        run: |
+          cp README.md npm/README.md
+          sed -i '/github\.com\/user-attachments\/assets/d' npm/README.md
+          sed -i 's|src="assets/|src="https://raw.githubusercontent.com/av/facts/main/assets/|g' npm/README.md
+
       - name: Publish
         run: npm publish --access public --provenance
         working-directory: npm
@@ -143,6 +149,12 @@ jobs:
           cd pypi
           sed -i "s/^version = .*/version = \"$VERSION\"/" pyproject.toml
           sed -i "s/^VERSION = .*/VERSION = \"$VERSION\"/" setup.py
+
+      - name: Prepare README
+        run: |
+          cp README.md pypi/README.md
+          sed -i '/github\.com\/user-attachments\/assets/d' pypi/README.md
+          sed -i 's|src="assets/|src="https://raw.githubusercontent.com/av/facts/main/assets/|g' pypi/README.md
 
       - name: Build sdist
         run: python -m build --sdist
