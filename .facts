@@ -150,8 +150,8 @@
 ### check
 - label: lints all files first — aborts early on lint errors
   command: grep -q 'lint::lint_content' src/check.rs && grep -q 'fix lint errors first' src/check.rs
-- label: groups output by status: passed, failed, manual
-  command: grep -q '"passed"' src/check.rs && grep -q '"failed"' src/check.rs && grep -q '"manual"' src/check.rs
+- label: output is streamed — each result printed immediately as its command finishes
+  command: grep -q 'print_result' src/check.rs && grep -q 'out.flush()' src/check.rs
 - each fact line shows ID and full path (file > section > label)
 - label: file prefix omitted for .facts (default), shown for other files
   command: grep -q 'filename == ".facts"' src/model.rs && grep -q 'display_name' src/check.rs
@@ -400,6 +400,10 @@
 - label: get — look up a single fact by ID
   command: grep -q "Get" src/main.rs && test -f src/get.rs
   tags: [implemented]
+- label: skills subcommand exists
+  command: cargo run -- skills --help 2>/dev/null
+  tags: [implemented]
+- update — self-update the facts binary to the latest release @implemented
 
 ## move
 - label: moves a fact to a different section within the same file
@@ -488,6 +492,29 @@
 ## check
 - label: timeout exit code is 124
   command: grep -q '(124,' src/check.rs
+- label: TTY shows pending fact ID while command runs, replaced by result on completion
+  command: grep -q 'is_tty' src/check.rs && grep -q '\\r\\x1b' src/check.rs
+- label: progress indicator is suppressed in non-TTY environments
+  command: grep -q 'is_tty' src/check.rs && grep -q 'color::enabled' src/check.rs
+
+## skills
+- skills list shows all installed skills with name and description @implemented
+- skills show prints the full content of a skill by name @implemented
+- skills update re-installs skills from the binary without re-running init @implemented
+- bare facts skills defaults to list @implemented
+- skills show reads from baked-in skills, works without init @implemented
+- skills help text tells agents they can read skills via CLI before installing @implemented
+
+## update
+- update detects install method from binary path: npm prefix → npm, pipx/pip path → pipx, else → direct curl download @implemented
+- direct update: queries GitHub API for latest version, downloads platform binary via curl, replaces in-place @implemented
+- update prints old version → new version on success @implemented
+- update is a no-op when already on the latest version @implemented
+- update exits non-zero if the download or replacement fails @implemented
+- update uses the same platform targets and archive formats as install.sh @implemented
+- npm update: runs npm update -g @avcodes/facts @implemented
+- pipx update: runs pipx upgrade facts-cli @implemented
+- direct update requires curl or wget on PATH @implemented
 
 # distribution
 
@@ -504,6 +531,8 @@
   command: grep -q 'github.com.*releases.*download' pypi/setup.py && grep -q 'BuildPyWithBinary' pypi/setup.py
 - label: PyPI package name is facts-cli
   command: grep -q 'name = "facts-cli"' pypi/pyproject.toml
+- label: README recommends pipx (not pip) for Python installs
+  command: grep -q 'pipx install' README.md && ! grep -q 'pip install' README.md
 
 ## install.sh
 - label: rejects Windows and suggests npm or pip instead
@@ -524,3 +553,12 @@
 ## file
 - label: fact file discovery sorts .facts first, then alphabetically
   command: grep -q 'sort\|\.facts.*first\|display_name' src/project.rs
+
+# skills
+
+## facts
+- label: the core skill documents correct install commands (npm: pipx: facts-cli, curl)
+  command: grep -q '@avcodes/facts' skills/facts/SKILL.md && grep -q 'pipx install' skills/facts/SKILL.md
+  tags: [avcodes/facts,]
+- label: the core skill explicitly warns agents not to use npx facts
+  command: grep -q 'never.*npx facts' skills/facts/SKILL.md

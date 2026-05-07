@@ -21,14 +21,14 @@ curl -fsSL https://raw.githubusercontent.com/av/facts/main/install.sh | sh
 ```
 
 ```bash
-npm install -g @aspect-build/facts
+npm install -g @avcodes/facts
 ```
 
 ```bash
-pip install facts-cli
+pipx install facts-cli
 ```
 
-Verify with `facts --version`.
+Verify with `facts --version`. The command is always `facts` — never `npx facts`.
 
 ## Core idea
 

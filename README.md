@@ -57,7 +57,7 @@ curl -fsSL https://av.codes/facts.sh | sh
 
 ```sh
 npm install -g @avcodes/facts        # or npm
-pip install facts-cli                 # or pip
+pipx install facts-cli               # or pipx
 ```
 
 It's a single Rust binary with two dependencies, running on Linux, macOS, and Windows.

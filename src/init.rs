@@ -19,7 +19,7 @@ const DISCOVER_SKILL: &str = include_str!("../skills/facts-discover/SKILL.md");
 const IMPLEMENT_SKILL: &str = include_str!("../skills/facts-implement/SKILL.md");
 const REFINE_SKILL: &str = include_str!("../skills/facts-refine/SKILL.md");
 
-const SKILLS: &[(&str, &str)] = &[
+pub(crate) const SKILLS: &[(&str, &str)] = &[
     ("facts", FACTS_SKILL),
     ("facts-discover", DISCOVER_SKILL),
     ("facts-implement", IMPLEMENT_SKILL),
@@ -33,19 +33,25 @@ const AGENT_DOCS_SECTION: &str = "\
 <!-- facts:start -->
 ## Fact-driven development
 
-This project uses [facts](https://github.com/av/facts) — a CLI that manages `.facts` files containing atomic, validatable truth statements about the project. The fact sheet is both the spec and the documentation.
+This project uses [facts](https://github.com/av/facts) for specification and documentation. All work flows through the fact sheet — it is the source of truth.
 
-**Start of work:** Run `facts list` to read the project spec. Run `facts check` to see what holds and what doesn't. Use this to orient before writing code.
+**Read the skill first:** `facts skills show facts` — it has the full workflow, format spec, and command reference.
 
-**During work:** Keep the fact sheet in sync. When you add a feature, add corresponding facts. When you fix a bug, verify related facts still hold. When you remove code, remove obsolete facts. Run `facts check` after significant changes.
+**All tasks start and end with facts.** When the user asks you to implement, build, fix, or change anything:
+1. `facts list` — read the spec to orient
+2. Add or refine facts that describe what should be true when the work is done
+3. Implement the code changes
+4. Verify only what you changed — use `facts check --tags \"<tag>\"` or `facts get <id>` to scope checks to the facts you worked on. Never run bare `facts check` unless asked.
+5. Tag completed facts `@implemented`
 
-**Three distinct workflows — do not confuse them:**
-- **Define** — write new facts as specification. The user says \"add facts\", \"define the spec\", \"work on facts\". Do NOT remove unimplemented facts — they represent intended work.
-- **Refine** (`facts-refine` skill) — collaboratively sharpen vague facts, resolve contradictions, fill gaps. When the user says \"refine\", \"clarify\", or \"review the facts\".
-- **Discover** (`facts-discover` skill) — scan the codebase and sync the fact sheet to match reality. Only when the user explicitly asks to discover, audit, or sync.
-- **Implement** (`facts-implement` skill) — make unimplemented facts true in code. Only when the user explicitly asks to implement.
+Do not wait for the user to mention facts. Define facts for every task, refine them, implement against them, and verify.
 
-When in doubt about which workflow the user wants, ask.
+**Lifecycle:** `@draft` → `@spec` → `@implemented`
+
+**Skills** (invoke via `facts skills show <name>`):
+- `facts-refine` — sharpen `@draft` facts into `@spec` with the user
+- `facts-discover` — scan the codebase and sync facts to reality (only when explicitly asked)
+- `facts-implement` — implement `@spec` facts in code, verify, tag `@implemented`
 <!-- facts:end -->";
 
 const AGENT_MD_FILES: &[&str] = &["CLAUDE.md", "AGENTS.md"];
@@ -112,7 +118,7 @@ fn run_in(root: &Path) -> Result<()> {
 // Skill installation
 // ---------------------------------------------------------------------------
 
-fn install_skill(root: &Path, name: &str, content: &str) -> Result<()> {
+pub(crate) fn install_skill(root: &Path, name: &str, content: &str) -> Result<()> {
     let skill_dir = root.join(".agents").join("skills").join(name);
     let skill_path = skill_dir.join("SKILL.md");
 
@@ -137,7 +143,7 @@ fn install_skill(root: &Path, name: &str, content: &str) -> Result<()> {
 // Claude symlinks
 // ---------------------------------------------------------------------------
 
-fn is_claude_available(root: &Path) -> bool {
+pub(crate) fn is_claude_available(root: &Path) -> bool {
     if root.join(".claude").exists() {
         return true;
     }
@@ -156,7 +162,7 @@ fn is_claude_available(root: &Path) -> bool {
 }
 
 #[cfg(unix)]
-fn link_skill_for_claude(root: &Path, name: &str) -> Result<()> {
+pub(crate) fn link_skill_for_claude(root: &Path, name: &str) -> Result<()> {
     let link_dir = root.join(".claude").join("skills");
     let link_path = link_dir.join(name);
     // Relative from .claude/skills/ up to project root, then into .agents/skills/<name>
@@ -186,7 +192,7 @@ fn link_skill_for_claude(root: &Path, name: &str) -> Result<()> {
 }
 
 #[cfg(not(unix))]
-fn link_skill_for_claude(_root: &Path, name: &str) -> Result<()> {
+pub(crate) fn link_skill_for_claude(_root: &Path, name: &str) -> Result<()> {
     println!("  skip  .claude/skills/{name} (symlinks not supported on this platform)");
     Ok(())
 }

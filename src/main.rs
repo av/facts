@@ -15,15 +15,25 @@ mod move_fact;
 mod parser;
 mod project;
 mod remove;
+mod skills;
 mod tags;
 mod uninit;
+mod update;
 mod writer;
 
 use clap::{Parser, Subcommand};
 
 /// A CLI for fact-driven development with coding agents.
 #[derive(Parser)]
-#[command(name = "facts", version, about)]
+#[command(name = "facts", version, about, before_help = "\
+Start here (for AI agents):\n  \
+  facts skills show facts\n\n  \
+  Skills ship with the CLI and include the full workflow, format spec,\n  \
+  and command reference. Read the skill before using the CLI.\n\n  \
+  skills [list]               List available skills\n  \
+  skills show <name>          Read a skill (facts, facts-discover, ...)\n  \
+  skills update               Install/update skills in the project\
+")]
 struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
@@ -167,6 +177,28 @@ enum Command {
         #[arg(long)]
         force: bool,
     },
+
+    /// Update facts to the latest version.
+    Update,
+
+    /// Manage agent skills. Use `show` to read a skill without installing.
+    Skills {
+        #[command(subcommand)]
+        action: Option<SkillsCommand>,
+    },
+}
+
+#[derive(Subcommand)]
+enum SkillsCommand {
+    /// Show available skills with descriptions.
+    List,
+    /// Print the full content of a skill.
+    Show {
+        /// Skill name (e.g. "facts", "facts-discover").
+        name: String,
+    },
+    /// Install or update skills in the current project.
+    Update,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -283,6 +315,17 @@ fn main() -> anyhow::Result<()> {
         }
         Some(Command::Uninit { force }) => {
             uninit::run(force)?;
+        }
+        Some(Command::Update) => {
+            update::run()?;
+        }
+        Some(Command::Skills { action }) => {
+            let action = match action {
+                Some(SkillsCommand::Show { name }) => skills::SkillsAction::Show { name },
+                Some(SkillsCommand::Update) => skills::SkillsAction::Update,
+                Some(SkillsCommand::List) | None => skills::SkillsAction::List,
+            };
+            skills::run(&action)?;
         }
         None => {
             let opts = list::ListOptions {
