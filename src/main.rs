@@ -62,6 +62,14 @@ enum Command {
         /// Boolean tag filter expression (e.g. "mvp and not blocked").
         #[arg(long)]
         tags: Option<String>,
+
+        /// Boolean search expression matched against section, label, and tags (e.g. "update and cli").
+        #[arg(long)]
+        search: Option<String>,
+
+        /// Limit section nesting depth (0 = top-level only).
+        #[arg(long)]
+        depth: Option<usize>,
     },
 
     /// Run all command-facts, report pass/fail/manual.
@@ -69,6 +77,14 @@ enum Command {
         /// Boolean tag filter expression (e.g. "mvp and not blocked").
         #[arg(long)]
         tags: Option<String>,
+
+        /// Boolean search expression matched against section, label, and tags (e.g. "update and cli").
+        #[arg(long)]
+        search: Option<String>,
+
+        /// Limit section nesting depth (0 = top-level only).
+        #[arg(long)]
+        depth: Option<usize>,
 
         /// Per-command timeout in seconds.
         #[arg(long)]
@@ -211,6 +227,8 @@ fn main() -> anyhow::Result<()> {
             has_command,
             manual,
             tags,
+            search,
+            depth,
         }) => {
             let opts = list::ListOptions {
                 file_filter: file,
@@ -218,12 +236,21 @@ fn main() -> anyhow::Result<()> {
                 has_command,
                 manual,
                 tags_expr: tags,
+                search_expr: search,
+                depth,
             };
             list::run(&opts)?;
         }
-        Some(Command::Check { tags, timeout }) => {
+        Some(Command::Check {
+            tags,
+            search,
+            depth,
+            timeout,
+        }) => {
             let opts = check::CheckOptions {
                 tags_expr: tags,
+                search_expr: search,
+                depth,
                 timeout,
             };
             let all_passed = check::run(&opts)?;
@@ -334,6 +361,8 @@ fn main() -> anyhow::Result<()> {
                 has_command: false,
                 manual: false,
                 tags_expr: None,
+                search_expr: None,
+                depth: None,
             };
             list::run(&opts)?;
         }

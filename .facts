@@ -488,6 +488,18 @@
 ## list
 - label: section filter is case-insensitive contiguous sub-path matching
   command: grep -q 'eq_ignore_ascii_case' src/list.rs
+- label: --search flag accepts a boolean expression matched case-insensitively against section path, label, and tags combined
+  command: cargo run -- list --search "update and cli" 2>&1 | grep -q "update"
+  tags: [implemented]
+- label: --search reuses the same boolean expression parser as --tags (and, or, not, parentheses)
+  command: grep -q "matches_search_expr" src/tags.rs && grep -q "validate_tag_expr" src/list.rs
+  tags: [implemented]
+- label: --depth N limits output to facts within N levels of section nesting from root
+  command: cargo run -- list --depth 1 2>&1 | grep -q "."
+  tags: [implemented]
+- label: --search and --depth compose with existing filters (--section, --tags, --file, --manual) via AND
+  command: cargo run -- list --search "init" --section "cli" --depth 2 2>&1 | grep -q "init"
+  tags: [implemented]
 
 ## check
 - label: timeout exit code is 124
@@ -496,6 +508,12 @@
   command: grep -q 'is_tty' src/check.rs && grep -q '\\r\\x1b' src/check.rs
 - label: progress indicator is suppressed in non-TTY environments
   command: grep -q 'is_tty' src/check.rs && grep -q 'color::enabled' src/check.rs
+- label: --search flag filters check output using the same boolean expression as list --search
+  command: cargo run -- check --search "update" --tags "implemented" 2>&1 | grep -q "update"
+  tags: [implemented]
+- label: --depth N limits section nesting depth in check output from root
+  command: cargo run -- check --depth 1 2>&1 | grep -q "."
+  tags: [implemented]
 
 ## skills
 - skills list shows all installed skills with name and description @implemented
@@ -515,6 +533,14 @@
 - npm update: runs npm update -g @avcodes/facts @implemented
 - pipx update: runs pipx upgrade facts-cli @implemented
 - direct update requires curl or wget on PATH @implemented
+- label: update runs init after upgrading when run inside a facts project
+  command: grep -q "init::run" src/update.rs
+  tags: [implemented]
+
+## init
+- label: init replaces the agent docs section between markers when content differs from the binary's embedded version
+  command: grep -q "existing_section == AGENT_DOCS_SECTION" src/init.rs
+  tags: [implemented]
 
 # distribution
 

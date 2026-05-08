@@ -35,16 +35,17 @@ const AGENT_DOCS_SECTION: &str = "\
 
 This project uses [facts](https://github.com/av/facts) for specification and documentation. All work flows through the fact sheet — it is the source of truth.
 
-**Read the skill first:** `facts skills show facts` — it has the full workflow, format spec, and command reference.
+**Every change starts with a fact.** Facts are the spec — they define what \"done\" means. Code that isn't described by a fact is unverifiable and will be treated as incorrect. The skill `facts skills show facts` has the full format spec and command reference.
 
-**All tasks start and end with facts.** When the user asks you to implement, build, fix, or change anything:
-1. `facts list` — read the spec to orient
-2. Add or refine facts that describe what should be true when the work is done
-3. Implement the code changes
-4. Verify only what you changed — use `facts check --tags \"<tag>\"` or `facts get <id>` to scope checks to the facts you worked on. Never run bare `facts check` unless asked.
-5. Tag completed facts `@implemented`
+1. `facts list` — read the current spec to orient. Fact sheets can be large — use filters to focus: `--section \"cli/init\"`, `--tags \"draft\"`, `--file api.facts`, `--manual`. Read only the section relevant to your task, not the entire sheet.
+2. `facts add` — write facts describing what should be true when done. Each fact is a testable claim. You are not ready to write code until this step is complete.
+3. Implement the code to make those facts true
+4. `facts check --tags \"<tag>\"` or `facts get <id>` — verify your changes. Never run bare `facts check` unless asked.
+5. `facts edit <id> --add-tag implemented` — mark verified facts done
 
-Do not wait for the user to mention facts. Define facts for every task, refine them, implement against them, and verify.
+Step 4 only works if step 2 happened. If you skipped step 2, go back now — you cannot verify work that has no fact.
+
+**Manual facts (`?` in check output):** these have no command, so you verify them by reading the relevant code. For each `?` fact: read what it claims, check the code, report PASS or FAIL with a one-line reason. Reporting \"N manual\" without verifying each one is not acceptable.
 
 **Lifecycle:** `@draft` → `@spec` → `@implemented`
 
@@ -211,7 +212,20 @@ fn install_agent_docs(root: &Path) -> Result<()> {
         }
         let content = std::fs::read_to_string(&path)?;
         if content.contains(SECTION_START) {
-            println!("  skip  {name} (facts section exists)");
+            let start = content.find(SECTION_START).unwrap();
+            let end_marker = content[start..].find(SECTION_END).unwrap();
+            let end = start + end_marker + SECTION_END.len();
+            let existing_section = &content[start..end];
+            if existing_section == AGENT_DOCS_SECTION {
+                println!("  skip  {name} (facts section up to date)");
+            } else {
+                let mut new_content = String::new();
+                new_content.push_str(&content[..start]);
+                new_content.push_str(AGENT_DOCS_SECTION);
+                new_content.push_str(&content[end..]);
+                std::fs::write(&path, new_content)?;
+                println!("  update  {name} (facts section updated)");
+            }
         } else {
             let mut new_content = content.clone();
             if !new_content.ends_with('\n') && !new_content.is_empty() {
@@ -1988,6 +2002,19 @@ mod tests {
         install_agent_docs(dir.path()).unwrap();
         let second = std::fs::read_to_string(dir.path().join("CLAUDE.md")).unwrap();
         assert_eq!(first, second);
+    }
+
+    #[test]
+    fn test_agent_docs_replaces_stale_section() {
+        let dir = tempfile::tempdir().unwrap();
+        let stale = "# Project\n\n<!-- facts:start -->\nold content\n<!-- facts:end -->\n\n## Other\n";
+        std::fs::write(dir.path().join("CLAUDE.md"), stale).unwrap();
+        install_agent_docs(dir.path()).unwrap();
+        let result = std::fs::read_to_string(dir.path().join("CLAUDE.md")).unwrap();
+        assert!(result.contains(AGENT_DOCS_SECTION));
+        assert!(!result.contains("old content"));
+        assert!(result.contains("# Project"));
+        assert!(result.contains("## Other"));
     }
 
     #[test]

@@ -6,7 +6,7 @@ use crate::id;
 use crate::model::FactSheet;
 use crate::parser;
 use crate::project;
-use crate::tags::{matches_tag_expr, validate_tag_expr};
+use crate::tags::{matches_search_expr, matches_tag_expr, validate_tag_expr};
 
 /// Options for the list command.
 pub struct ListOptions {
@@ -15,14 +15,17 @@ pub struct ListOptions {
     pub has_command: bool,
     pub manual: bool,
     pub tags_expr: Option<String>,
+    pub search_expr: Option<String>,
+    pub depth: Option<usize>,
 }
 
 /// Run the list subcommand.
 pub fn run(opts: &ListOptions) -> Result<()> {
-    // Validate tag expression up front so malformed expressions fail early
-    // instead of silently producing empty output.
     if let Some(ref expr) = opts.tags_expr {
         validate_tag_expr(expr).map_err(|e| anyhow::anyhow!("invalid tag expression: {e}"))?;
+    }
+    if let Some(ref expr) = opts.search_expr {
+        validate_tag_expr(expr).map_err(|e| anyhow::anyhow!("invalid search expression: {e}"))?;
     }
 
     let root = project::find_project_root()?;
@@ -97,6 +100,19 @@ pub fn run(opts: &ListOptions) -> Result<()> {
                 && !matches_tag_expr(expr, &fact.tags)
             {
                 continue;
+            }
+
+            if let Some(depth) = opts.depth {
+                if path.len() > depth {
+                    continue;
+                }
+            }
+
+            if let Some(ref expr) = opts.search_expr {
+                let haystack = build_search_haystack(&path, &fact.label, &fact.tags);
+                if !matches_search_expr(expr, &haystack) {
+                    continue;
+                }
             }
 
             let display = format_fact_line(sheet, &path, id, &fact.label, &fact.tags, id_width);
@@ -184,6 +200,15 @@ fn format_fact_line(
             .join(&format!(" {dim_sep} "));
         format!("{dim_id}  {colored_path} {dim_sep} {label}{tag_suffix}")
     }
+}
+
+fn build_search_haystack(section_path: &[String], label: &str, tags: &[String]) -> String {
+    let mut parts: Vec<&str> = section_path.iter().map(|s| s.as_str()).collect();
+    parts.push(label);
+    for tag in tags {
+        parts.push(tag.as_str());
+    }
+    parts.join(" ")
 }
 
 #[cfg(test)]

@@ -2,6 +2,8 @@ use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use crate::{init, project};
+
 const REPO: &str = "av/facts";
 const BINARY: &str = "facts";
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -17,10 +19,19 @@ pub fn run() -> Result<()> {
     let method = detect_install_method(&exe);
 
     match method {
-        InstallMethod::Npm => update_npm(),
-        InstallMethod::Pipx => update_pipx(),
-        InstallMethod::Direct => update_direct(&exe),
+        InstallMethod::Npm => update_npm()?,
+        InstallMethod::Pipx => update_pipx()?,
+        InstallMethod::Direct => update_direct(&exe)?,
     }
+
+    if let Ok(root) = project::find_project_root() {
+        if root.join(".facts").is_file() {
+            println!();
+            init::run()?;
+        }
+    }
+
+    Ok(())
 }
 
 fn detect_install_method(exe: &Path) -> InstallMethod {

@@ -3774,3 +3774,202 @@ fn edit_batch_rejects_new_id_with_multiple_ids() {
             "--new-id cannot be used with multiple IDs",
         ));
 }
+
+// ===========================================================================
+// list --search
+// ===========================================================================
+
+#[test]
+fn list_search_matches_label() {
+    let dir = project("# cli\n\n- init scaffolds\n- check runs commands\n");
+    facts_cmd(&dir)
+        .args(["list", "--search", "scaffolds"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("init scaffolds"))
+        .stdout(predicate::str::contains("check runs commands").not());
+}
+
+#[test]
+fn list_search_matches_section() {
+    let dir = project("# api\n\n- endpoint works\n\n# cli\n\n- command works\n");
+    facts_cmd(&dir)
+        .args(["list", "--search", "api"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("endpoint works"))
+        .stdout(predicate::str::contains("command works").not());
+}
+
+#[test]
+fn list_search_matches_tags() {
+    let dir = project("# project\n\n- tagged fact  @mvp\n- untagged fact\n");
+    facts_cmd(&dir)
+        .args(["list", "--search", "mvp"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("tagged fact"))
+        .stdout(predicate::str::contains("untagged fact").not());
+}
+
+#[test]
+fn list_search_case_insensitive() {
+    let dir = project("# CLI\n\n- Init Scaffolds\n");
+    facts_cmd(&dir)
+        .args(["list", "--search", "init"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Init Scaffolds"));
+}
+
+#[test]
+fn list_search_boolean_and() {
+    let dir = project("# cli\n\n- init scaffolds\n- check runs\n\n# api\n\n- init endpoint\n");
+    facts_cmd(&dir)
+        .args(["list", "--search", "init and cli"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("init scaffolds"))
+        .stdout(predicate::str::contains("init endpoint").not());
+}
+
+#[test]
+fn list_search_boolean_or() {
+    let dir = project("# project\n\n- alpha\n- beta\n- gamma\n");
+    facts_cmd(&dir)
+        .args(["list", "--search", "alpha or beta"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("alpha"))
+        .stdout(predicate::str::contains("beta"))
+        .stdout(predicate::str::contains("gamma").not());
+}
+
+#[test]
+fn list_search_boolean_not() {
+    let dir = project("# project\n\n- alpha\n- beta\n");
+    facts_cmd(&dir)
+        .args(["list", "--search", "not beta"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("alpha"))
+        .stdout(predicate::str::contains("beta").not());
+}
+
+#[test]
+fn list_search_boolean_parens() {
+    let dir = project("# cli\n\n- init fast\n- check fast\n\n# api\n\n- init slow\n");
+    facts_cmd(&dir)
+        .args(["list", "--search", "(init or check) and cli"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("init fast"))
+        .stdout(predicate::str::contains("check fast"))
+        .stdout(predicate::str::contains("init slow").not());
+}
+
+#[test]
+fn list_search_composes_with_tags() {
+    let dir = project("# cli\n\n- init works  @mvp\n- init also  @blocked\n");
+    facts_cmd(&dir)
+        .args(["list", "--search", "init", "--tags", "mvp"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("init works"))
+        .stdout(predicate::str::contains("init also").not());
+}
+
+#[test]
+fn list_search_composes_with_section() {
+    let dir = project("# cli\n\n- init fact\n\n# api\n\n- init fact\n");
+    facts_cmd(&dir)
+        .args(["list", "--search", "init", "--section", "api"])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("init fact")
+                .count(1),
+        );
+}
+
+#[test]
+fn list_search_invalid_expression_errors() {
+    let dir = project("# project\n\n- fact\n");
+    facts_cmd(&dir)
+        .args(["list", "--search", "(unclosed"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("invalid search expression"));
+}
+
+// ===========================================================================
+// list --depth
+// ===========================================================================
+
+#[test]
+fn list_depth_zero_shows_preamble_only() {
+    let dir = project("- top level\n\n# section\n\n- nested\n");
+    facts_cmd(&dir)
+        .args(["list", "--depth", "0"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("top level"))
+        .stdout(predicate::str::contains("nested").not());
+}
+
+#[test]
+fn list_depth_one_shows_first_level() {
+    let dir = project("# a\n\n- level one\n\n## b\n\n- level two\n");
+    facts_cmd(&dir)
+        .args(["list", "--depth", "1"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("level one"))
+        .stdout(predicate::str::contains("level two").not());
+}
+
+#[test]
+fn list_depth_composes_with_search() {
+    let dir = project("# cli\n\n- init\n\n## sub\n\n- init deep\n");
+    facts_cmd(&dir)
+        .args(["list", "--search", "init", "--depth", "1"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("init"))
+        .stdout(predicate::str::contains("init deep").not());
+}
+
+// ===========================================================================
+// check --search / --depth
+// ===========================================================================
+
+#[test]
+fn check_search_filters_output() {
+    let dir = project(
+        "# project\n\n\
+         - label: alpha\n  command: \"true\"\n\
+         - label: beta\n  command: \"true\"\n",
+    );
+    facts_cmd(&dir)
+        .args(["check", "--search", "alpha"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("alpha"))
+        .stdout(predicate::str::contains("beta").not());
+}
+
+#[test]
+fn check_depth_filters_output() {
+    let dir = project(
+        "# a\n\n\
+         - label: shallow\n  command: \"true\"\n\n\
+         ## b\n\n\
+         - label: deep\n  command: \"true\"\n",
+    );
+    facts_cmd(&dir)
+        .args(["check", "--depth", "1"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("shallow"))
+        .stdout(predicate::str::contains("deep").not());
+}

@@ -16,6 +16,27 @@ pub fn matches_tag_expr(expr: &str, tags: &[String]) -> bool {
     }
 }
 
+/// Check if a haystack string matches a boolean search expression.
+///
+/// Each term in the expression is matched case-insensitively as a substring
+/// of the haystack. Supports the same operators as tag expressions: and, or,
+/// not, and parentheses.
+pub fn matches_search_expr(expr: &str, haystack: &str) -> bool {
+    match parse_expr(expr) {
+        Ok(ast) => eval_search(&ast, &haystack.to_ascii_lowercase()),
+        Err(_) => false,
+    }
+}
+
+fn eval_search(expr: &Expr, haystack: &str) -> bool {
+    match expr {
+        Expr::Tag(term) => haystack.contains(&term.to_ascii_lowercase()),
+        Expr::Not(e) => !eval_search(e, haystack),
+        Expr::And(a, b) => eval_search(a, haystack) && eval_search(b, haystack),
+        Expr::Or(a, b) => eval_search(a, haystack) || eval_search(b, haystack),
+    }
+}
+
 #[derive(Debug)]
 enum Expr {
     Tag(String),
@@ -196,6 +217,39 @@ mod tests {
         assert!(validate_tag_expr("mvp and").is_err());
         assert!(validate_tag_expr("((").is_err());
         assert!(validate_tag_expr("mvp or").is_err());
+    }
+
+    #[test]
+    fn test_search_substring_match() {
+        assert!(matches_search_expr("init", "cli init scaffolds"));
+        assert!(!matches_search_expr("deploy", "cli init scaffolds"));
+    }
+
+    #[test]
+    fn test_search_case_insensitive() {
+        assert!(matches_search_expr("CLI", "cli init scaffolds"));
+        assert!(matches_search_expr("Init", "cli init scaffolds"));
+    }
+
+    #[test]
+    fn test_search_boolean() {
+        assert!(matches_search_expr("cli and init", "cli init scaffolds"));
+        assert!(!matches_search_expr("cli and deploy", "cli init scaffolds"));
+        assert!(matches_search_expr("cli or deploy", "cli init scaffolds"));
+        assert!(matches_search_expr("not deploy", "cli init scaffolds"));
+        assert!(!matches_search_expr("not cli", "cli init scaffolds"));
+    }
+
+    #[test]
+    fn test_search_parens() {
+        assert!(matches_search_expr(
+            "(init or check) and cli",
+            "cli init scaffolds"
+        ));
+        assert!(!matches_search_expr(
+            "(init or check) and api",
+            "cli init scaffolds"
+        ));
     }
 
     #[test]

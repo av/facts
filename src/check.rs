@@ -12,11 +12,13 @@ use crate::lint;
 use crate::model::FactSheet;
 use crate::parser;
 use crate::project;
-use crate::tags::{matches_tag_expr, validate_tag_expr};
+use crate::tags::{matches_search_expr, matches_tag_expr, validate_tag_expr};
 
 /// Options for the check command.
 pub struct CheckOptions {
     pub tags_expr: Option<String>,
+    pub search_expr: Option<String>,
+    pub depth: Option<usize>,
     pub timeout: Option<u64>,
 }
 
@@ -211,10 +213,11 @@ fn print_result(out: &mut impl Write, r: &CheckResult, id_width: usize, detail_i
 
 /// Run the check subcommand.
 pub fn run(opts: &CheckOptions) -> Result<bool> {
-    // Validate tag expression up front so malformed expressions fail early
-    // instead of silently producing empty output.
     if let Some(ref expr) = opts.tags_expr {
         validate_tag_expr(expr).map_err(|e| anyhow::anyhow!("invalid tag expression: {e}"))?;
+    }
+    if let Some(ref expr) = opts.search_expr {
+        validate_tag_expr(expr).map_err(|e| anyhow::anyhow!("invalid search expression: {e}"))?;
     }
 
     let root = project::find_project_root()?;
@@ -300,6 +303,19 @@ pub fn run(opts: &CheckOptions) -> Result<bool> {
                 continue;
             }
 
+            if let Some(depth) = opts.depth {
+                if section_path.len() > depth {
+                    continue;
+                }
+            }
+
+            if let Some(ref expr) = opts.search_expr {
+                let haystack = build_search_haystack(&section_path, &fact.label, &fact.tags);
+                if !matches_search_expr(expr, &haystack) {
+                    continue;
+                }
+            }
+
             let display_path = format_display_path(sheet, &section_path, &fact.label);
 
             let is_tty = color::enabled();
@@ -374,6 +390,15 @@ pub fn run(opts: &CheckOptions) -> Result<bool> {
     );
 
     Ok(!has_failures)
+}
+
+fn build_search_haystack(section_path: &[String], label: &str, tags: &[String]) -> String {
+    let mut parts: Vec<&str> = section_path.iter().map(|s| s.as_str()).collect();
+    parts.push(label);
+    for tag in tags {
+        parts.push(tag.as_str());
+    }
+    parts.join(" ")
 }
 
 #[cfg(test)]
