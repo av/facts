@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -36,7 +36,8 @@ pub fn run() -> Result<()> {
 
 fn detect_install_method(exe: &Path) -> InstallMethod {
     let path_str = exe.to_string_lossy();
-    if path_str.contains("node_modules") || path_str.contains("/npm/") || path_str.contains("/nvm/") {
+    if path_str.contains("node_modules") || path_str.contains("/npm/") || path_str.contains("/nvm/")
+    {
         return InstallMethod::Npm;
     }
     if path_str.contains("pipx/venvs") || path_str.contains("site-packages") {
@@ -143,11 +144,17 @@ fn get_latest_version() -> Result<String> {
     let cmd = find_downloader()?;
     let output = match cmd {
         "curl" => Command::new("curl")
-            .args(["-fsSL", &format!("https://api.github.com/repos/{REPO}/releases/latest")])
+            .args([
+                "-fsSL",
+                &format!("https://api.github.com/repos/{REPO}/releases/latest"),
+            ])
             .output()
             .context("failed to run curl")?,
         "wget" => Command::new("wget")
-            .args(["-qO-", &format!("https://api.github.com/repos/{REPO}/releases/latest")])
+            .args([
+                "-qO-",
+                &format!("https://api.github.com/repos/{REPO}/releases/latest"),
+            ])
             .output()
             .context("failed to run wget")?,
         _ => unreachable!(),
@@ -251,7 +258,9 @@ mod tests {
 
     #[test]
     fn test_detect_npm_nvm() {
-        let p = Path::new("/home/user/.nvm/versions/node/v20/lib/node_modules/@avcodes/facts/bin/facts");
+        let p = Path::new(
+            "/home/user/.nvm/versions/node/v20/lib/node_modules/@avcodes/facts/bin/facts",
+        );
         assert!(matches!(detect_install_method(p), InstallMethod::Npm));
     }
 

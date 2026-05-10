@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 
 use crate::init::{self, SKILLS};
 use crate::project;
@@ -80,7 +80,10 @@ fn extract_description(content: &str) -> String {
             continue;
         }
         if in_description {
-            if !trimmed.is_empty() && !trimmed.contains(':') || trimmed.starts_with(' ') || line.starts_with("  ") {
+            if !trimmed.is_empty() && !trimmed.contains(':')
+                || trimmed.starts_with(' ')
+                || line.starts_with("  ")
+            {
                 parts.push(trimmed.to_string());
             } else {
                 break;

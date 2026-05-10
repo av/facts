@@ -182,6 +182,24 @@
   command: facts list --help 2>&1 | grep -q '\-\-tags'
 - label: default target is all *.facts files
   command: grep -q "discover_fact_files" src/list.rs
+- label: --light flag shows markdown-like output with headings and bullets
+  command: facts list --light --help 2>&1 | grep -q '\-\-light'
+  tags: [implemented]
+- label: light mode shows section headings in gray
+  command: cargo test list_light_shows_markdown_headings -- --nocapture 2>&1 | grep -q "test result: ok"
+  tags: [implemented]
+- label: light mode shows IDs in gray parentheses after the bullet
+  command: cargo test list_light_shows_ids_in_parens -- --nocapture 2>&1 | grep -q "test result: ok"
+  tags: [implemented]
+- label: light mode hides commands — light is for skimming, not detail
+  command: cargo test list_light_hides_commands -- --nocapture 2>&1 | grep -q "test result: ok"
+  tags: [implemented]
+- label: light mode composes with existing filters
+  command: cargo test list_light_composes_with_filters -- --nocapture 2>&1 | grep -q "test result: ok"
+  tags: [implemented]
+- label: light mode shows tags inline with @tag notation in different colors
+  command: cargo test list_light_shows_tags -- --nocapture 2>&1 | grep -q "test result: ok"
+  tags: [implemented]
 
 ### add
 - label: defaults to .facts at the top level

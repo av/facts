@@ -17,6 +17,7 @@ pub struct ListOptions {
     pub tags_expr: Option<String>,
     pub search_expr: Option<String>,
     pub depth: Option<usize>,
+    pub light: bool,
 }
 
 /// Run the list subcommand.
@@ -64,12 +65,16 @@ pub fn run(opts: &ListOptions) -> Result<()> {
     let id_width = assigned_ids.iter().map(|id| id.len()).max().unwrap_or(3);
 
     let mut fact_idx = 0;
+    let mut any_output = false;
     for sheet in &sheets {
         let file_matches = if let Some(ref f) = opts.file_filter {
             sheet.filename == *f || sheet.filename == format!("{f}.facts")
         } else {
             true
         };
+
+        let mut last_path: Vec<String> = Vec::new();
+        let mut printed_file = false;
 
         for (path, fact) in sheet.all_facts() {
             let id = &assigned_ids[fact_idx];
@@ -115,12 +120,72 @@ pub fn run(opts: &ListOptions) -> Result<()> {
                 }
             }
 
-            let display = format_fact_line(sheet, &path, id, &fact.label, &fact.tags, id_width);
-            println!("{display}");
+            if opts.light {
+                if !printed_file && !sheet.display_name().is_empty() {
+                    if any_output {
+                        println!();
+                    }
+                    println!("{}", color::dim(&sheet.filename));
+                    println!();
+                    printed_file = true;
+                }
+                print_light_headings(&mut last_path, &path, any_output);
+                print_light_fact(fact, id);
+            } else {
+                let display = format_fact_line(sheet, &path, id, &fact.label, &fact.tags, id_width);
+                println!("{display}");
+            }
+            any_output = true;
         }
     }
 
     Ok(())
+}
+
+/// Print markdown heading lines for any new path segments.
+fn print_light_headings(last_path: &mut Vec<String>, new_path: &[String], needs_gap: bool) {
+    let common = last_path
+        .iter()
+        .zip(new_path.iter())
+        .take_while(|(a, b)| a == b)
+        .count();
+    let has_new = common < new_path.len();
+    if has_new && needs_gap {
+        println!();
+    }
+    for (i, segment) in new_path.iter().enumerate().skip(common) {
+        let depth = i + 1;
+        let hashes = "#".repeat(depth);
+        println!("{}", color::dim(&format!("{hashes} {segment}")));
+    }
+    last_path.clear();
+    last_path.extend_from_slice(new_path);
+}
+
+/// Print a fact in markdown-like light format.
+fn print_light_fact(fact: &crate::model::Fact, id: &str) {
+    let dim_id = color::dim(&format!("({id})"));
+    let mut line = format!("- {dim_id} {}", fact.label);
+    if !fact.tags.is_empty() {
+        let tag_str = fact
+            .tags
+            .iter()
+            .map(|t| light_tag_color(t))
+            .collect::<Vec<_>>()
+            .join(" ");
+        line.push_str(&format!(" {tag_str}"));
+    }
+    println!("{line}");
+}
+
+/// Choose a color for a tag in light mode.
+fn light_tag_color(tag: &str) -> String {
+    match tag {
+        "implemented" => color::green(&format!("@{tag}")),
+        "draft" => color::yellow(&format!("@{tag}")),
+        "spec" => color::bold(&format!("@{tag}")),
+        _ => color::dim(&format!("@{tag}")),
+    }
 }
 
 /// Match a section filter against a path at any depth.

@@ -25,7 +25,11 @@ use clap::{Parser, Subcommand};
 
 /// A CLI for fact-driven development with coding agents.
 #[derive(Parser)]
-#[command(name = "facts", version, about, before_help = "\
+#[command(
+    name = "facts",
+    version,
+    about,
+    before_help = "\
 Start here (for AI agents):\n  \
   facts skills show facts\n\n  \
   Skills ship with the CLI and include the full workflow, format spec,\n  \
@@ -33,7 +37,8 @@ Start here (for AI agents):\n  \
   skills [list]               List available skills\n  \
   skills show <name>          Read a skill (facts, facts-discover, ...)\n  \
   skills update               Install/update skills in the project\
-")]
+"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
@@ -70,6 +75,10 @@ enum Command {
         /// Limit section nesting depth (0 = top-level only).
         #[arg(long)]
         depth: Option<usize>,
+
+        /// Show markdown-like output with headings and bullets, no IDs.
+        #[arg(long)]
+        light: bool,
     },
 
     /// Run all command-facts, report pass/fail/manual.
@@ -229,6 +238,7 @@ fn main() -> anyhow::Result<()> {
             tags,
             search,
             depth,
+            light,
         }) => {
             let opts = list::ListOptions {
                 file_filter: file,
@@ -238,6 +248,7 @@ fn main() -> anyhow::Result<()> {
                 tags_expr: tags,
                 search_expr: search,
                 depth,
+                light,
             };
             list::run(&opts)?;
         }
@@ -363,6 +374,7 @@ fn main() -> anyhow::Result<()> {
                 tags_expr: None,
                 search_expr: None,
                 depth: None,
+                light: false,
             };
             list::run(&opts)?;
         }

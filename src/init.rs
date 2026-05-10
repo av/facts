@@ -2007,7 +2007,8 @@ mod tests {
     #[test]
     fn test_agent_docs_replaces_stale_section() {
         let dir = tempfile::tempdir().unwrap();
-        let stale = "# Project\n\n<!-- facts:start -->\nold content\n<!-- facts:end -->\n\n## Other\n";
+        let stale =
+            "# Project\n\n<!-- facts:start -->\nold content\n<!-- facts:end -->\n\n## Other\n";
         std::fs::write(dir.path().join("CLAUDE.md"), stale).unwrap();
         install_agent_docs(dir.path()).unwrap();
         let result = std::fs::read_to_string(dir.path().join("CLAUDE.md")).unwrap();
