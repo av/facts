@@ -76,7 +76,7 @@ enum Command {
         #[arg(long)]
         depth: Option<usize>,
 
-        /// Show markdown-like output with headings and bullets, no IDs.
+        /// Show markdown-like output with headings, bullets, and dimmed IDs.
         #[arg(long)]
         light: bool,
     },

@@ -52,7 +52,7 @@ That's the entire format. Plain strings for simple facts, mappings when you need
 facts list
 facts list --tags "not implemented"
 facts list --has-command
-facts list --light                      # markdown-like output, no IDs
+facts list --light                      # markdown-like output with headings and dimmed IDs
 ```
 
 **Validate:**
