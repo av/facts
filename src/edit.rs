@@ -155,6 +155,10 @@ pub fn run_in(opts: &EditOptions, root: &Path) -> Result<()> {
             .with_context(|| format!("failed to write {}", file_path.display()))?;
     }
 
+    for id in &opts.target_ids {
+        println!("{}", id);
+    }
+
     Ok(())
 }
 

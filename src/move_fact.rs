@@ -151,8 +151,8 @@ pub fn run_in(opts: &MoveOptions, root: &Path) -> Result<()> {
     let (ref source_path, ref source_sheet) = sheets[source_sheet_idx];
     let source_output = writer::write(source_sheet);
     if source_output.trim().is_empty() {
-        std::fs::write(source_path, "")
-            .with_context(|| format!("failed to write {}", source_path.display()))?;
+        std::fs::remove_file(source_path)
+            .with_context(|| format!("failed to remove {}", source_path.display()))?;
     } else {
         std::fs::write(source_path, &source_output)
             .with_context(|| format!("failed to write {}", source_path.display()))?;

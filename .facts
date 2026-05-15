@@ -159,8 +159,8 @@
 - failed facts show command, exit code, and stderr
 - manual facts are listed without detail
 - summary line: N passed, N failed, N manual
-- label: legend at the bottom explains manual marker
-  command: grep -q "no command\|verified manually" src/check.rs
+- label: when manual facts exist, the footer tells the agent to verify each one
+  command: grep -q "verify each against the code" src/check.rs
 - exit 0 if all command-facts pass, non-zero if any fail
 - label: --tags flag accepts a boolean filter expression: "mvp and not blocked"
   command: facts check --help 2>&1 | grep -q '\-\-tags'
@@ -442,6 +442,9 @@
 - label: requires at least one of --section or --file
   command: grep -q "at least one\|requires.*section.*file\|must provide" src/move_fact.rs
   tags: [implemented]
+- label: move deletes the source .facts file if the last fact is moved out leaving it empty
+  command: grep -q "std::fs::remove_file" src/move_fact.rs
+  tags: [implemented]
 
 ## add
 - label: rejects absolute paths and subdirectory paths for --file
@@ -488,6 +491,12 @@
 ## edit
 - label: batch edit cannot use --label or --new-id with multiple IDs
   command: grep -q 'cannot be used with multiple IDs' src/edit.rs
+- label: edit prints the IDs of the edited facts (the ones provided by the user) on success
+  command: grep -q "for id in &opts.target_ids" src/edit.rs
+  tags: [implemented]
+- label: edit is not silent on success — it prints the target IDs of modified facts
+  command: grep -q "for id in &opts.target_ids" src/edit.rs
+  tags: [implemented]
 
 ### batch
 - label: edit accepts multiple IDs as positional arguments
@@ -532,6 +541,8 @@
 - label: --depth N limits section nesting depth in check output from root
   command: cargo run -- check --depth 1 2>&1 | grep -q "."
   tags: [implemented]
+- manual facts footer in check output uses correct singular/plural grammar ('1 fact has' / 'N facts have') @implemented
+- manual facts footer wording is precise ('verify each against the code and state PASS or FAIL with a one-line reason') @implemented
 
 ## skills
 - skills list shows all installed skills with name and description @implemented
@@ -558,6 +569,12 @@
 ## init
 - label: init replaces the agent docs section between markers when content differs from the binary's embedded version
   command: grep -q "existing_section == AGENT_DOCS_SECTION" src/init.rs
+  tags: [implemented]
+- .claude/settings.local.json is gitignored (personal Claude Code sandbox permissions must never be committed) @review-fix @draft @implemented
+
+## remove
+- label: remove deletes the .facts file if removing the last fact leaves it empty (symmetric to empty section cleanup)
+  command: grep -q "std::fs::remove_file" src/remove.rs
   tags: [implemented]
 
 # distribution
@@ -598,6 +615,11 @@
 - label: fact file discovery sorts .facts first, then alphabetically
   command: grep -q 'sort\|\.facts.*first\|display_name' src/project.rs
 
+## tags
+- label: tag filter expressions using --tags match case-insensitively (for consistency with --search)
+  command: grep -q "eq_ignore_ascii_case" src/tags.rs
+  tags: [implemented]
+
 # skills
 
 ## facts
@@ -606,3 +628,11 @@
   tags: [avcodes/facts,]
 - label: the core skill explicitly warns agents not to use npx facts
   command: grep -q 'never.*npx facts' skills/facts/SKILL.md
+
+# domain
+- a FactSheet is a parsed .facts file containing an optional preamble and a list of Sections @review-fix @draft @implemented
+- a Section is a heading-delimited group of Facts; sections nest via heading depth (e.g. cli/check) @review-fix @draft @implemented
+- a Fact is an atomic, validatable truth statement with a label, optional command, optional tags, and an ID @review-fix @draft @implemented
+- a FactSheet contains Sections; Facts belong to exactly one Section @review-fix @draft @implemented
+- check runs the command for each fact that has one and records passed/failed/manual status @review-fix @draft @implemented
+- manual facts (no command) are verified by a human or agent reading the code and stating PASS or FAIL with a one-line reason @review-fix @draft @implemented

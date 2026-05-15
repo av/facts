@@ -72,8 +72,8 @@ pub fn run_in(target_id: &str, root: &Path) -> Result<()> {
 
     let output = writer::write(sheet);
     if output.trim().is_empty() {
-        std::fs::write(file_path, "")
-            .with_context(|| format!("failed to write {}", file_path.display()))?;
+        std::fs::remove_file(file_path)
+            .with_context(|| format!("failed to remove {}", file_path.display()))?;
     } else {
         std::fs::write(file_path, &output)
             .with_context(|| format!("failed to write {}", file_path.display()))?;

@@ -384,10 +384,15 @@ pub fn run(opts: &CheckOptions) -> Result<bool> {
     );
     println!("{}", color::bold(&summary));
 
-    println!(
-        "{}",
-        color::dim("? = no command — verified manually by the agent"),
-    );
+    if manual > 0 {
+        let noun = if manual == 1 { "fact has" } else { "facts have" };
+        println!(
+            "{}",
+            color::yellow(&format!(
+                "{manual} {noun} no command — verify each against the code and state PASS or FAIL with a one-line reason."
+            )),
+        );
+    }
 
     Ok(!has_failures)
 }

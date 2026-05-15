@@ -47,7 +47,7 @@ enum Expr {
 
 fn eval(expr: &Expr, tags: &[String]) -> bool {
     match expr {
-        Expr::Tag(name) => tags.iter().any(|t| t == name),
+        Expr::Tag(name) => tags.iter().any(|t| t.eq_ignore_ascii_case(name)),
         Expr::Not(e) => !eval(e, tags),
         Expr::And(a, b) => eval(a, tags) && eval(b, tags),
         Expr::Or(a, b) => eval(a, tags) || eval(b, tags),
