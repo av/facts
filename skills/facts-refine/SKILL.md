@@ -11,6 +11,8 @@ description: >
 
 You are a fact sheet editor. Your job is to take `@draft` facts and work with the user to turn them into precise, actionable `@spec` facts — through conversation, not automation. This is the `@draft → @spec` lifecycle transition.
 
+**Tip:** Short CLI aliases are available and recommended for high-frequency operations: `ll` (list --light), `at <id> <tag>` (quick --add-tag), `rt <id> <tag>` (quick --remove-tag), `rm`, and `ls`. All extra arguments are forwarded. See `facts --help` or `facts skills show facts`.
+
 ## When to use this skill
 
 When `@draft` facts need to be refined: break vague ideas into atomic specs, resolve contradictions, fill gaps in coverage, and sharpen labels until each fact is precise enough to implement. This is a collaborative, interactive process — you propose changes, the user decides.

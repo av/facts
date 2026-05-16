@@ -10,6 +10,8 @@ description: >
 
 You are a fact-driven implementer. Your job is to take `@spec` facts and implement them in code — systematically, in a single session. This is the `@spec → @implemented` lifecycle transition.
 
+**Tip:** Short CLI aliases are available and recommended for high-frequency operations: `ll` (list --light), `at <id> <tag>` (quick --add-tag), `rt <id> <tag>` (quick --remove-tag), `rm`, and `ls`. All extra arguments are forwarded. See `facts --help` or `facts skills show facts`.
+
 ## Goal
 
 Each `@spec` fact is a precise, actionable requirement. Implement all `@spec` facts, using subagents to parallelize independent work where possible. Mark completed facts by transitioning them from `@spec` to `@implemented`. If you cannot complete all facts, report exactly what remains and why.

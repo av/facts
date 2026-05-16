@@ -36,7 +36,11 @@ Start here (for AI agents):\n  \
   and command reference. Read the skill before using the CLI.\n\n  \
   skills [list]               List available skills\n  \
   skills show <name>          Read a skill (facts, facts-discover, ...)\n  \
-  skills update               Install/update skills in the project\
+  skills update               Install/update skills in the project\n\n  \
+Common short aliases (all args passed through):\n  \
+  ll = list --light     ls = list\n  \
+  rm = remove\n  \
+  at <id> <tag> = edit <id> --add-tag <tag>     rt <id> <tag> = edit <id> --remove-tag <tag>\
 "
 )]
 struct Cli {
@@ -226,8 +230,71 @@ enum SkillsCommand {
     Update,
 }
 
+/// Expand short aliases to their underlying commands, preserving and proxying
+/// all additional arguments. This runs before clap parsing.
+fn expand_aliases(mut args: Vec<String>) -> Vec<String> {
+    if args.len() < 2 {
+        return args;
+    }
+    let alias = args[1].as_str();
+    match alias {
+        "ll" => {
+            args[1] = "list".to_string();
+            args.insert(2, "--light".to_string());
+        }
+        "ls" => {
+            args[1] = "list".to_string();
+        }
+        "rm" => {
+            args[1] = "remove".to_string();
+        }
+        "at" | "rt" => {
+            // Support `facts at --help` and `facts rt --help` by delegating to edit
+            let has_help = args.iter().any(|a| a == "--help" || a == "-h");
+            if has_help && args.len() <= 3 {
+                // at --help or at <something> --help (simple cases) -> edit --help
+                args[1] = "edit".to_string();
+            } else if args.len() >= 4 {
+                // Rewrite: at/rt <ID>... <TAG> [extra...]  ->  edit <ID>... --add-tag/--remove-tag <TAG> [extra...]
+                // The tag is the last *bare* (non-flag) token among the leading positionals (before any --flag).
+                let alias_cmd = args.remove(1); // remove "at" or "rt"
+                let tail: Vec<String> = args.drain(1..).collect(); // now args has only [bin]
+                // Find the first flag (starts with '-') — everything before it is the ID+tag positionals.
+                let first_flag = tail.iter().position(|a| a.starts_with('-'));
+                let (prefix, after) = match first_flag {
+                    Some(i) => (&tail[..i], tail[i..].to_vec()),
+                    None => (tail.as_slice(), vec![]),
+                };
+                if prefix.len() >= 2 {
+                    // last bare in prefix is the tag, earlier ones are IDs
+                    let tag = prefix.last().unwrap().clone();
+                    let ids: Vec<String> = prefix[..prefix.len() - 1].to_vec();
+                    let flag = if alias_cmd == "at" {
+                        "--add-tag"
+                    } else {
+                        "--remove-tag"
+                    };
+                    args.push("edit".to_string());
+                    args.extend(ids);
+                    args.push(flag.to_string());
+                    args.push(tag);
+                    args.extend(after);
+                } else {
+                    // not enough leading bare words for "ID(s) TAG", restore (unknown subcommand)
+                    args.extend(tail);
+                }
+            }
+            // else: not enough args and no --help, leave "at"/"rt" in place -> clap unknown subcommand
+        }
+        _ => {}
+    }
+    args
+}
+
 fn main() -> anyhow::Result<()> {
-    let cli = Cli::parse();
+    let args: Vec<String> = std::env::args().collect();
+    let expanded = expand_aliases(args);
+    let cli = Cli::parse_from(expanded);
 
     match cli.command {
         Some(Command::List {

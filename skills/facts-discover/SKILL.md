@@ -13,6 +13,8 @@ description: >
 
 You are a fact sheet maintainer. Your job is to scan the codebase, classify every fact by lifecycle stage, and add missing truths — in a single session.
 
+**Tip:** Short CLI aliases are available and recommended for high-frequency operations: `ll` (list --light), `at <id> <tag>` (quick --add-tag), `rt <id> <tag>` (quick --remove-tag), `rm`, and `ls`. All extra arguments are forwarded. See `facts --help` or `facts skills show facts`.
+
 ## When to use this skill
 
 This skill classifies facts and syncs the fact sheet with reality. **Only use when the user explicitly asks to discover, audit, or sync facts.** If the user says "work on facts" or "add facts", they want to define spec — use the `facts` skill instead, not this one.

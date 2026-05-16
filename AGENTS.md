@@ -65,7 +65,7 @@ This project uses [facts](https://github.com/av/facts) for specification and doc
 2. `facts add` — write facts describing what should be true when done. Each fact is a testable claim. You are not ready to write code until this step is complete.
 3. Implement the code to make those facts true
 4. `facts check --tags "<tag>"` or `facts get <id>` — verify your changes. Never run bare `facts check` unless asked.
-5. `facts edit <id> --add-tag implemented` — mark verified facts done
+5. `facts at <id> implemented` (or `facts edit <id> --add-tag implemented`) — mark verified facts done
 
 Step 4 only works if step 2 happened. If you skipped step 2, go back now — you cannot verify work that has no fact.
 

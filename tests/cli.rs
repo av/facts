@@ -4121,3 +4121,236 @@ fn list_light_preamble_only() {
         "preamble should contain label: {lines:?}"
     );
 }
+
+// ===========================================================================
+// aliases (ll, ls, rm, at, rt)
+// ===========================================================================
+
+#[test]
+fn ll_aliases_to_list_light() {
+    let dir = project("- label: fact with command\n  command: echo hi\n");
+    let output = facts_cmd(&dir).args(["ll"]).output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("fact with command"),
+        "ll should show fact: {stdout}"
+    );
+    assert!(
+        !stdout.contains("command:"),
+        "ll should hide commands like --light: {stdout}"
+    );
+}
+
+#[test]
+fn ll_passes_other_args_through() {
+    let dir = project("# alpha\n\n- alpha fact\n\n# beta\n\n- beta fact\n");
+    let output = facts_cmd(&dir)
+        .args(["ll", "--section", "alpha"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("alpha fact"),
+        "ll --section should filter: {stdout}"
+    );
+    assert!(
+        !stdout.contains("beta fact"),
+        "ll should not show other section: {stdout}"
+    );
+    assert!(
+        stdout.contains("# alpha"),
+        "ll should show headings (light mode): {stdout}"
+    );
+}
+
+#[test]
+fn ls_aliases_to_list() {
+    let dir = project("- label: fact with command\n  command: echo hi\n");
+    let output = facts_cmd(&dir).args(["ls"]).output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("fact with command"),
+        "ls should show fact: {stdout}"
+    );
+    // Normal list (non-light) format: "ID  label" (padded ID + two spaces), not light's "- (ID) label"
+    assert!(
+        stdout.contains("  fact with command"),
+        "ls should use normal list format (not light mode): {stdout}"
+    );
+}
+
+#[test]
+fn rm_aliases_to_remove() {
+    let dir = project("- to be rm'ed\n- keep me\n");
+
+    let list_output = facts_cmd(&dir).arg("list").output().unwrap();
+    let stdout = String::from_utf8_lossy(&list_output.stdout);
+    let id = stdout
+        .lines()
+        .find(|l| l.contains("to be rm'ed"))
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap();
+
+    facts_cmd(&dir)
+        .args(["rm", id])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("to be rm'ed"));
+
+    let content = fs::read_to_string(dir.path().join(".facts")).unwrap();
+    assert!(!content.contains("to be rm'ed"));
+    assert!(content.contains("keep me"));
+}
+
+#[test]
+fn at_adds_tag_to_fact() {
+    let dir = project("- plain fact\n");
+
+    let list_output = facts_cmd(&dir).arg("list").output().unwrap();
+    let stdout = String::from_utf8_lossy(&list_output.stdout);
+    let id = stdout
+        .lines()
+        .find(|l| l.contains("plain fact"))
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap();
+
+    facts_cmd(&dir).args(["at", id, "mytag"]).assert().success();
+
+    let content = fs::read_to_string(dir.path().join(".facts")).unwrap();
+    // for a plain fact, add-tag keeps it as plain string with inline @tag (see edit.rs test_add_tag_to_plain_fact)
+    assert!(
+        content.contains("@mytag"),
+        "at should add the tag (inline for plain facts): {content}"
+    );
+}
+
+#[test]
+fn rt_removes_tag_from_fact() {
+    let dir = project("- label: has tag\n  tags: [oldtag, keep]\n");
+
+    let list_output = facts_cmd(&dir).arg("list").output().unwrap();
+    let stdout = String::from_utf8_lossy(&list_output.stdout);
+    let id = stdout
+        .lines()
+        .find(|l| l.contains("has tag"))
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap();
+
+    facts_cmd(&dir)
+        .args(["rt", id, "oldtag"])
+        .assert()
+        .success();
+
+    let content = fs::read_to_string(dir.path().join(".facts")).unwrap();
+    assert!(
+        !content.contains("oldtag"),
+        "rt should remove the tag: {content}"
+    );
+    assert!(content.contains("keep"));
+}
+
+#[test]
+fn at_supports_multiple_ids() {
+    let dir = project("- first\n- second\n");
+
+    let list_output = facts_cmd(&dir).arg("list").output().unwrap();
+    let stdout = String::from_utf8_lossy(&list_output.stdout);
+    let lines: Vec<&str> = stdout.lines().collect();
+    let id1 = lines
+        .iter()
+        .find(|l| l.contains("first"))
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap();
+    let id2 = lines
+        .iter()
+        .find(|l| l.contains("second"))
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap();
+
+    facts_cmd(&dir)
+        .args(["at", id1, id2, "both"])
+        .assert()
+        .success();
+
+    let content = fs::read_to_string(dir.path().join(".facts")).unwrap();
+    // both facts should now have the tag (inline @both since they started plain)
+    let count = content.matches("@both").count();
+    assert!(
+        count >= 2,
+        "both facts should have received the tag via at with multiple IDs: {content}"
+    );
+}
+
+#[test]
+fn at_passes_extra_args_through() {
+    let dir = project("- label: original\n");
+
+    let list_output = facts_cmd(&dir).arg("list").output().unwrap();
+    let stdout = String::from_utf8_lossy(&list_output.stdout);
+    let id = stdout
+        .lines()
+        .find(|l| l.contains("original"))
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap();
+
+    facts_cmd(&dir)
+        .args(["at", id, "passthru", "--label", "renamed via at"])
+        .assert()
+        .success();
+
+    let content = fs::read_to_string(dir.path().join(".facts")).unwrap();
+    assert!(
+        content.contains("renamed via at"),
+        "extra --label after tag should be passed through to edit: {content}"
+    );
+    assert!(
+        content.contains("passthru"),
+        "the tag from at should still be added: {content}"
+    );
+}
+
+#[test]
+fn rt_with_comma_separated_tags() {
+    let dir = project("- label: multi\n  tags: [a, b, c]\n");
+
+    let list_output = facts_cmd(&dir).arg("list").output().unwrap();
+    let stdout = String::from_utf8_lossy(&list_output.stdout);
+    let id = stdout
+        .lines()
+        .find(|l| l.contains("multi"))
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap();
+
+    facts_cmd(&dir)
+        .args(["rt", id, "a,c"]) // remove a and c in one go
+        .assert()
+        .success();
+
+    let content = fs::read_to_string(dir.path().join(".facts")).unwrap();
+    assert!(
+        content.contains("tags: [b]"),
+        "only b should remain in tags: {content}"
+    );
+    assert!(
+        !content.contains("tags: [a") && !content.contains("a, b"),
+        "a should be removed from the tags list: {content}"
+    );
+    assert!(
+        !content.contains("c]") && !content.contains("b, c"),
+        "c should be removed from the tags list: {content}"
+    );
+}

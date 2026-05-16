@@ -47,12 +47,21 @@ That's the entire format. Plain strings for simple facts, mappings when you need
 
 ## Essential commands
 
+**Recommended short aliases** (all extra arguments are passed through):
+- `ll` = `list --light` — the most common "skim" view (markdown headings + dim IDs)
+- `ls` = `list`
+- `rm` = `remove`
+- `at <id> <tag>` = `edit <id> --add-tag <tag>` (supports multiple IDs and `--label` / `--new-id` etc. after the tag)
+- `rt <id> <tag>` = `edit <id> --remove-tag <tag>`
+
+These are the highest-ROI shortcuts for daily and agent use.
+
 **See everything:**
 ```
-facts list
-facts list --tags "not implemented"
-facts list --has-command
-facts list --light                      # markdown-like output with headings and dimmed IDs
+facts ll
+facts ll --tags "not implemented"
+facts ll --has-command
+facts list --light                      # or the alias: facts ll
 ```
 
 **Validate:**
@@ -70,18 +79,19 @@ facts add "users can sign up" --section features/auth
 facts add "signup returns 201" --command "curl -s -o /dev/null -w '%{http_code}' localhost:3000/signup | grep 201" --section features/auth
 ```
 
-**Edit facts:**
+**Edit / tag facts (lifecycle transitions):**
 ```
-facts edit <id> --add-tag "implemented"
-facts edit <id> --remove-tag "blocked"
+facts at <id> "implemented"          # most common: quick add tag
+facts rt <id> "spec"                 # quick remove tag
+facts at <id> "spec" --new-id xyz    # extra flags still work
 facts edit <id> --label "corrected statement"
 facts edit <id> --command "new check command"
 ```
-Prefer `--add-tag` / `--remove-tag` over `--tags`. The latter replaces all tags silently — use it only when you intend a full replacement.
+Prefer `at`/`rt` (or the long `--add-tag` / `--remove-tag` forms) over the full `--tags` replacement. The latter replaces all tags silently.
 
 **Remove facts:**
 ```
-facts remove <id>
+facts rm <id>     # or the long form: facts remove <id>
 ```
 
 **Scaffold a new project:**
@@ -148,7 +158,7 @@ Use these names consistently across the fact sheet. The domain section lives in 
 
 **Start of work — always do this first:**
 ```
-facts list                              # read the full spec
+facts ll                                # read the full spec (skim view)
 facts check                             # see what holds and what doesn't
 ```
 Use the fact sheet to orient before writing code. It is the source of truth for what the project should look like and what is already validated.
@@ -167,10 +177,10 @@ facts add "signup returns 201" --command "curl -s ..." --section features/auth -
 
 **Track lifecycle progress:**
 ```
-facts list --tags "draft"               # rough ideas to refine
-facts list --tags "spec"                # ready to implement
-facts list --tags "implemented"         # done
-facts list --tags "not implemented"     # all remaining work
+facts ll --tags "draft"                 # rough ideas to refine (ll = list --light)
+facts ll --tags "spec"                  # ready to implement
+facts ll --tags "implemented"           # done
+facts ll --tags "not implemented"       # all remaining work
 facts check                             # verify
 ```
 
@@ -178,8 +188,8 @@ facts check                             # verify
 When you add a feature, add corresponding facts. When you fix a bug, verify related facts still hold. When you remove code, remove obsolete facts.
 ```
 facts check                             # find failing facts
-facts edit <id> --label "corrected"     # fix inaccurate facts
-facts remove <id>                       # remove obsolete facts
+facts at <id> "implemented"             # or the long form: facts edit <id> --add-tag "implemented"
+facts rm <id>                           # remove obsolete facts
 facts add "new truth" --section foo     # add discovered truths
 ```
 

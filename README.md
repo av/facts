@@ -138,12 +138,21 @@ A `.facts` file is valid Markdown *and* valid YAML per section.
 
 ## Commands
 
+Common short aliases (all extra args are passed through to the real command):
+
+- `ll` = `list --light`  `ls` = `list`
+- `rm` = `remove`
+- `at <id> <tag>` = `edit <id> --add-tag <tag>`  `rt <id> <tag>` = `edit <id> --remove-tag <tag>`
+
 ```
 facts                                    # list all facts (default)
+facts ll                                 # list in markdown-like skim format
+facts ll --tags "draft"                  # combine alias + filter
 facts check                              # verify everything
 facts check --tags "mvp and not blocked" # filter by tag expression
 facts add "claim" --section api          # add a fact
-facts edit <id> --add-tag spec           # modify a fact
+facts at <id> spec                       # quick tag add (or use the full edit form)
+facts rt <id> draft                      # quick tag remove
 facts remove <id>                        # remove a fact
 facts get <id>                           # look up a single fact
 facts move <id> --section new/path       # relocate a fact

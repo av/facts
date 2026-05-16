@@ -128,6 +128,18 @@
 - label: uninit — reverse of init, removes .facts file and agent skills
   command: grep -q "Uninit" src/main.rs && test -f src/uninit.rs
 
+### aliases
+- the CLI provides five high-impact short aliases that expand before clap parsing and forward all remaining arguments
+- `ll` expands to `list --light` — the most frequently used skim view for agents
+  command: facts ll --help 2>&1 | grep -q 'list --light'
+- `ls` expands to `list`
+- `rm` expands to `remove`
+- `at <ID>... <TAG> [flags...]` expands to `edit <ID>... --add-tag <TAG> [flags...]` — supports multiple IDs and arbitrary extra options after the tag
+  command: facts at --help 2>&1 | grep -q 'edit'
+- `rt <ID>... <TAG> [flags...]` expands to `edit <ID>... --remove-tag <TAG> [flags...]`
+- aliases are documented in the built-in `facts --help`, README, and skills/facts/SKILL.md
+- label: using the short forms is recommended for agent workflows because lifecycle tagging (at/rt) and frequent listing (ll) are the highest-friction commands
+
 ### init
 - creates a .facts file in the project root
 - label: detects well-known framework/runtime combos (e.g. Cargo.toml, package.json)
@@ -281,8 +293,10 @@
 
 ## architecture
 
-- label: minimal dependencies
-  command: test $(sed -n "/^\[dependencies\]/,/^\[/p" Cargo.toml | grep -c "^[a-z]") -le 3
+- label: minimal dependencies (core 2 + TUI ratatui/crossterm)
+  id: swd
+  command: test $(sed -n "/^\[dependencies\]/,/^\[/p" Cargo.toml | grep -c "^[a-z]") -le 5
+  tags: [spec]
 - label: clap for CLI argument parsing
   command: grep -q '^clap' Cargo.toml
 - label: anyhow for error handling
@@ -575,6 +589,80 @@
 ## remove
 - label: remove deletes the .facts file if removing the last fact leaves it empty (symmetric to empty section cleanup)
   command: grep -q "std::fs::remove_file" src/remove.rs
+  tags: [implemented]
+
+## tui
+- label: There is a Ratatui-based TUI, launched via the 'tui' subcommand in the clap CLI
+  id: kot
+  tags: [implemented]
+- label: TUI supports full facts CRUD operations equivalent to the CLI: list/browse (with live search expr filters matching --section/--tags/--search/--depth/--file/--manual/--has-command), add, remove, edit (label, command, tags replace, new-id), get, check (live streaming); move supported via section field in edit form (dedicated move key in progress)
+  id: hj2
+  tags: [implemented]
+- label: TUI follows the Facts Design theme and look'n'feel from the Design System in the Downloads: dark background, bright neon green (#00ff9f) and cyan accents, clean Unicode box-drawing borders, consistent padding and professional appearance matching the CLI green/red/yellow output and hero branding
+  id: qcl
+  tags: [implemented]
+- label: TUI subcommand is defined as 'Tui' variant in the clap Command enum in src/main.rs (launched with no additional args)
+  id: 5hm
+  tags: [implemented]
+- label: TUI declares 'mod tui;' in src/main.rs and calls tui::run() in the main match arm for Command::Tui
+  id: udj
+  tags: [implemented]
+- label: TUI implementation depends on ratatui and crossterm crates (added to Cargo.toml [dependencies]) for TUI rendering and event handling
+  id: uni
+  tags: [implemented]
+- label: TUI main browse screen renders a virtualized table of facts (columns: ID, full section path, truncated label, tags, has-command indicator ✓, current check status icon)
+  id: npw
+  tags: [list, implemented]
+- label: TUI supports all list filters live: section path (subpath match), tags boolean expr, search boolean expr, depth, file, manual, has-command; filter bar updates table instantly on keystroke
+  id: gva
+  tags: [implemented]
+- label: TUI reuses core modules without duplication: parser, writer, model, project, locate, id, tags (for expr parsing), and check runner logic
+  id: 828
+  tags: [implemented]
+- label: TUI uses vim-style keybindings (hjkl/arrows for nav, / focus search/filter, a add, e edit, d delete/remove, c check, g get, r refresh, ? help, q/esc quit, m for move via edit) plus mouse click to select where supported by crossterm
+  id: 6tb
+  tags: [implemented]
+- label: TUI add operation opens a centered modal form with labeled inputs for: label (required, focused first), section, command, tags (comma or space), explicit id, target file; supports tab navigation, validation, submit on Ctrl-S or last-field Enter
+  id: nk9
+  tags: [implemented]
+- label: TUI edit supports editing selected fact(s) via form prefilled from current values, including tags (full replace via csv field) and setting new-id (preserves explicit id when present); add-tag/remove-tag semantics available via re-entering adjusted tags list
+  id: mfb
+  tags: [implemented]
+- label: TUI check mode runs validation in a non-blocking worker thread using std::sync::mpsc, streams PASS/FAIL/? updates into the table rows live (color coded green/red/yellow), shows running summary counts on completion and allows cancelling with C
+  id: ipp
+  tags: [implemented]
+- label: TUI properly initializes terminal: raw mode via crossterm, alternate screen buffer, optional mouse capture; installs panic hook that restores terminal state before re-panicking
+  id: pcy
+  tags: [implemented]
+- label: TUI guarantees terminal state restoration (raw mode off, main screen, cursor visible, mouse disabled) on every exit path: normal quit, errors, Ctrl-C (via signal handler or Drop), and panics (via hook)
+  id: 25x
+  tags: [implemented]
+- label: TUI theme is defined in a dedicated module with Facts Design System colors: dark navy background (Rgb 10,10,30), neon green accent (Rgb 0,255,159 matching hero), cyan highlights, red for errors, dim gray for secondary text, clean borders using box-drawing chars
+  id: v4f7
+  tags: [implemented]
+- label: TUI supports multiple .facts files: header shows current file and project root (multi-file discovery on load; dedicated cycle/select keybinding and target switching in progress)
+  id: 6ul
+  tags: [implemented]
+- label: TUI has a full-screen help mode (triggered by ?) showing keybindings table, usage tips, and Facts Design styled footer; esc or q returns to previous mode
+  id: 7kx
+  tags: [implemented]
+- label: TUI status bar always visible: project root | active filters summary | fact count (filtered/total) | selected ID | current mode | last action result
+  id: 9u4
+  tags: [implemented]
+- label: TUI handles very large fact sheets (e.g. this project's .facts) with responsive filtered table rendering and navigation; no full reload on every filter (rebuild only on mutation)
+  id: qgj
+  tags: [implemented]
+- label: TUI gracefully degrades when no .git found (shows warning banner 'no project root — operating in cwd', still allows TUI on local .facts files or explicit paths if supported)
+  id: 46g
+  tags: [implemented]
+- label: TUI check and other long ops use background thread + channel so main UI event loop (crossterm poll with 50ms timeout) stays responsive; no async crate used, preserving 'no async' constraint in core
+  id: 7ct
+  tags: [implemented]
+- label: TUI mutations (add/edit/remove/move) call into or replicate the exact logic of add.rs/edit.rs/remove.rs/move_fact.rs + writer so resulting .facts files, ID assignment, section cleanup, and raw preservation are identical to CLI
+  id: 7tb
+  tags: [implemented]
+- label: TUI increases the number of [dependencies] in Cargo.toml to 4 (clap, anyhow, ratatui, crossterm); the 'minimal dependencies' architecture fact is updated to -le 5 to accommodate the TUI feature
+  id: y12
   tags: [implemented]
 
 # distribution

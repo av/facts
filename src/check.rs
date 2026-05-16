@@ -385,7 +385,11 @@ pub fn run(opts: &CheckOptions) -> Result<bool> {
     println!("{}", color::bold(&summary));
 
     if manual > 0 {
-        let noun = if manual == 1 { "fact has" } else { "facts have" };
+        let noun = if manual == 1 {
+            "fact has"
+        } else {
+            "facts have"
+        };
         println!(
             "{}",
             color::yellow(&format!(
