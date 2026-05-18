@@ -66,7 +66,8 @@ Then scaffold your project:
 
 ```sh
 cd your-project
-facts init
+facts init              # scaffold .facts + install skills
+facts init api          # create api.facts instead
 facts check
 ```
 
@@ -130,6 +131,8 @@ A `.facts` file is valid Markdown *and* valid YAML per section.
 
 **Tags** filter with boolean expressions: `--tags "core and not blocked"`. Three well-known tags (`@draft`, `@spec`, `@implemented`) drive the lifecycle, but any tag works.
 
+**Files:** `.facts` is the default. Additional sheets use semantic names (`cli.facts`, `api.facts`). All `*.facts` files in the project root are discovered automatically. The `--file` flag accepts subdirectory paths (e.g. `--file src/api`) — subdirectory files are only visible when explicitly targeted.
+
 **Sections** use Markdown headings. Nesting creates hierarchy addressable by path (`api/auth`). Created when you add to them, removed when empty.
 
 **IDs** are short hashes of the label, stable as long as the label doesn't change.
@@ -159,7 +162,9 @@ facts move <id> --section new/path       # relocate a fact
 facts list --section api/auth            # filter by section
 facts lint                               # validate structure
 facts fmt                                # normalize all files
-facts init                               # scaffold + install skills
+facts init                               # scaffold .facts + install skills
+facts init api                           # create api.facts instead
+facts add "claim" --file src/api         # add to a subdirectory file
 facts uninit                             # remove facts from project
 ```
 

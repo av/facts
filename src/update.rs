@@ -27,7 +27,7 @@ pub fn run() -> Result<()> {
     if let Ok(root) = project::find_project_root() {
         if root.join(".facts").is_file() {
             println!();
-            init::run()?;
+            init::run(None)?;
         }
     }
 

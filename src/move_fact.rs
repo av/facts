@@ -46,11 +46,8 @@ pub fn run_in(opts: &MoveOptions, root: &Path) -> Result<()> {
     for path in &files {
         let content = std::fs::read_to_string(path)
             .with_context(|| format!("failed to read {}", path.display()))?;
-        let filename = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or(".facts");
-        let sheet = parser::parse(&content, filename)
+        let filename = project::relative_filename(root, path);
+        let sheet = parser::parse(&content, &filename)
             .with_context(|| format!("failed to parse {}", path.display()))?;
         sheets.push((path.clone(), sheet));
     }
@@ -97,23 +94,16 @@ pub fn run_in(opts: &MoveOptions, root: &Path) -> Result<()> {
 
     // Determine the target file.
     let target_filename = if let Some(ref f) = opts.target_file {
-        if f.ends_with(".facts") {
-            f.clone()
-        } else {
-            format!("{f}.facts")
-        }
+        let (name, _) = project::resolve_file_arg(root, f);
+        name
     } else {
-        // Same file as source.
         sheets[source_sheet_idx].1.filename.clone()
     };
 
     // Find target sheet index (or mark for creation).
-    let target_sheet_idx = sheets.iter().position(|(path, _)| {
-        path.file_name()
-            .and_then(|n| n.to_str())
-            .map(|n| n == target_filename)
-            .unwrap_or(false)
-    });
+    let target_sheet_idx = sheets
+        .iter()
+        .position(|(_, sheet)| sheet.filename == target_filename);
 
     let is_cross_file = match target_sheet_idx {
         Some(idx) => idx != source_sheet_idx,
@@ -162,15 +152,14 @@ pub fn run_in(opts: &MoveOptions, root: &Path) -> Result<()> {
     if is_cross_file {
         let target_idx = sheets
             .iter()
-            .position(|(path, _)| {
-                path.file_name()
-                    .and_then(|n| n.to_str())
-                    .map(|n| n == target_filename)
-                    .unwrap_or(false)
-            })
+            .position(|(_, sheet)| sheet.filename == target_filename)
             .unwrap();
         let (ref target_path, ref target_sheet) = sheets[target_idx];
         let target_output = writer::write(target_sheet);
+        if let Some(parent) = target_path.parent() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("failed to create directory {}", parent.display()))?;
+        }
         std::fs::write(target_path, &target_output)
             .with_context(|| format!("failed to write {}", target_path.display()))?;
     }

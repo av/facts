@@ -60,39 +60,15 @@ fn run_in(opts: &AddOptions, root: &Path) -> Result<String> {
 
     let filename = opts.file.as_deref().unwrap_or(".facts");
 
-    // Reject absolute paths — there's no valid reason to use one.
     if filename.starts_with('/') {
         anyhow::bail!("file path must be relative, not absolute");
     }
 
-    // Reject subdirectory paths — discover_fact_files only scans the project root,
-    // so files in subdirectories would be invisible to list/check/lint.
-    if filename.contains('/') || filename.contains('\\') {
-        anyhow::bail!("file must be in the project root (no subdirectory paths)");
+    if filename.contains("..") {
+        anyhow::bail!("file path must not contain '..'");
     }
 
-    let filename = if filename.ends_with(".facts") {
-        filename.to_string()
-    } else {
-        format!("{filename}.facts")
-    };
-
-    let file_path = root.join(&filename);
-
-    // Ensure the resolved path is within the project root.
-    let canonical_root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
-    let check_path = if file_path.exists() {
-        file_path.canonicalize()?
-    } else {
-        let parent = file_path.parent().unwrap_or(root);
-        let canon_parent = parent
-            .canonicalize()
-            .unwrap_or_else(|_| parent.to_path_buf());
-        canon_parent.join(file_path.file_name().unwrap())
-    };
-    if !check_path.starts_with(&canonical_root) {
-        anyhow::bail!("file path must be within the project root");
-    }
+    let (filename, file_path) = project::resolve_file_arg(root, filename);
 
     let _lock = FileLock::acquire(root)?;
 
@@ -166,11 +142,15 @@ fn run_in(opts: &AddOptions, root: &Path) -> Result<String> {
     }
 
     let output = writer::write(&sheet);
+    if let Some(parent) = file_path.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create directory {}", parent.display()))?;
+    }
     std::fs::write(&file_path, &output)
         .with_context(|| format!("failed to write {}", file_path.display()))?;
 
     // Re-read all fact sheets and assign IDs to find the new fact's ID.
-    let all_files = project::discover_fact_files(root)?;
+    let all_files = project::discover_with_explicit(root, opts.file.as_deref())?;
     let mut all_fact_labels: Vec<(String, Option<String>)> = Vec::new();
     let mut target_idx = None;
 
@@ -180,14 +160,11 @@ fn run_in(opts: &AddOptions, root: &Path) -> Result<String> {
         }
         let content = std::fs::read_to_string(path)
             .with_context(|| format!("failed to read {}", path.display()))?;
-        let fname = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or(".facts");
-        let file_sheet = parser::parse(&content, fname)
+        let fname = project::relative_filename(root, path);
+        let file_sheet = parser::parse(&content, &fname)
             .with_context(|| format!("failed to parse {}", path.display()))?;
 
-        let is_target_file = path.file_name().and_then(|n| n.to_str()) == Some(filename.as_str());
+        let is_target_file = fname == filename;
 
         for (section_path, f) in file_sheet.all_facts() {
             let idx = all_fact_labels.len();

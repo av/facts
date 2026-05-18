@@ -30,7 +30,7 @@ pub fn run(opts: &ListOptions) -> Result<()> {
     }
 
     let root = project::find_project_root()?;
-    let files = project::discover_fact_files(&root)?;
+    let files = project::discover_with_explicit(&root, opts.file_filter.as_deref())?;
 
     if files.is_empty() {
         eprintln!("no .facts files found in {}", root.display());
@@ -41,11 +41,8 @@ pub fn run(opts: &ListOptions) -> Result<()> {
     for path in &files {
         let content = std::fs::read_to_string(path)
             .with_context(|| format!("failed to read {}", path.display()))?;
-        let filename = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or(".facts");
-        let sheet = parser::parse(&content, filename)
+        let filename = project::relative_filename(&root, path);
+        let sheet = parser::parse(&content, &filename)
             .with_context(|| format!("failed to parse {}", path.display()))?;
         sheets.push(sheet);
     }

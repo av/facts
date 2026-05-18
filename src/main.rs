@@ -198,7 +198,10 @@ enum Command {
     Fmt,
 
     /// Scaffold a .facts file and install agent skills.
-    Init,
+    Init {
+        /// Name for the fact sheet (e.g. "api" creates api.facts). Omit for .facts.
+        name: Option<String>,
+    },
 
     /// Remove .facts file and agent skills installed by init.
     Uninit {
@@ -415,8 +418,8 @@ fn main() -> anyhow::Result<()> {
         Some(Command::Fmt) => {
             fmt::run()?;
         }
-        Some(Command::Init) => {
-            init::run()?;
+        Some(Command::Init { name }) => {
+            init::run(name.as_deref())?;
         }
         Some(Command::Uninit { force }) => {
             uninit::run(force)?;

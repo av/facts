@@ -24,6 +24,45 @@ fn find_project_root_from(start: &Path) -> Result<PathBuf> {
     }
 }
 
+/// Resolve a `--file` argument to a normalized filename and full path.
+///
+/// Appends `.facts` if not already present.
+pub fn resolve_file_arg(root: &Path, file_arg: &str) -> (String, PathBuf) {
+    let name = if file_arg.ends_with(".facts") {
+        file_arg.to_string()
+    } else {
+        format!("{file_arg}.facts")
+    };
+    let path = root.join(&name);
+    (name, path)
+}
+
+/// Discover root-level fact files, optionally including an explicit file path.
+pub fn discover_with_explicit(root: &Path, explicit_file: Option<&str>) -> Result<Vec<PathBuf>> {
+    let mut files = discover_fact_files(root)?;
+    if let Some(file_arg) = explicit_file {
+        let (_, path) = resolve_file_arg(root, file_arg);
+        let canonical = path.canonicalize().unwrap_or_else(|_| path.clone());
+        if path.exists()
+            && !files
+                .iter()
+                .any(|f| f.canonicalize().unwrap_or_else(|_| f.clone()) == canonical)
+        {
+            files.push(path);
+        }
+    }
+    Ok(files)
+}
+
+/// Compute the filename for a fact sheet relative to the project root.
+pub fn relative_filename(root: &Path, path: &Path) -> String {
+    path.strip_prefix(root)
+        .unwrap_or(path)
+        .to_str()
+        .unwrap_or(".facts")
+        .to_string()
+}
+
 /// Discover all .facts files in the project root directory (not recursive).
 pub fn discover_fact_files(root: &Path) -> Result<Vec<PathBuf>> {
     let mut files = Vec::new();

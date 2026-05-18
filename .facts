@@ -130,18 +130,18 @@
 
 ### aliases
 - the CLI provides five high-impact short aliases that expand before clap parsing and forward all remaining arguments
-- `ll` expands to `list --light` — the most frequently used skim view for agents
+- label: ll expands to list --light — the most frequently used skim view for agents
   command: facts ll --help 2>&1 | grep -q 'list --light'
-- `ls` expands to `list`
-- `rm` expands to `remove`
-- `at <ID>... <TAG> [flags...]` expands to `edit <ID>... --add-tag <TAG> [flags...]` — supports multiple IDs and arbitrary extra options after the tag
+- ls expands to list
+- rm expands to remove
+- label: at <ID>... <TAG> expands to edit <ID>... --add-tag <TAG> — supports multiple IDs and arbitrary extra options after the tag
   command: facts at --help 2>&1 | grep -q 'edit'
-- `rt <ID>... <TAG> [flags...]` expands to `edit <ID>... --remove-tag <TAG> [flags...]`
+- rt <ID>... <TAG> expands to edit <ID>... --remove-tag <TAG>
 - aliases are documented in the built-in `facts --help`, README, and skills/facts/SKILL.md
 - label: using the short forms is recommended for agent workflows because lifecycle tagging (at/rt) and frequent listing (ll) are the highest-friction commands
 
 ### init
-- creates a .facts file in the project root
+- creates a fact sheet in the project root (name optional, defaults to .facts)
 - label: detects well-known framework/runtime combos (e.g. Cargo.toml, package.json)
   command: grep -q "Cargo.toml\|package.json" src/init.rs
 - scaffolds initial facts based on detected stack
@@ -461,8 +461,8 @@
   tags: [implemented]
 
 ## add
-- label: rejects absolute paths and subdirectory paths for --file
-  command: grep -q 'must be relative' src/add.rs && grep -q 'no subdirectory paths' src/add.rs
+- label: rejects absolute paths and .. traversal for --file, allows subdirectory paths
+  command: grep -q 'must not contain' src/add.rs && grep -q 'resolve_file_arg' src/add.rs
 - label: section depth cannot exceed 6 levels
   command: grep -q 'parts.len() > 6' src/add.rs
 

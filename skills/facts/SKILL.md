@@ -96,14 +96,15 @@ facts rm <id>     # or the long form: facts remove <id>
 
 **Scaffold a new project:**
 ```
-facts init
+facts init              # creates .facts
+facts init api          # creates api.facts
 ```
 
 Run `facts <command> --help` for the full flag reference.
 
 ## How facts work
 
-**Files:** `.facts` is the default. Additional sheets use semantic names (`cli.facts`, `api.facts`). All `*.facts` files in the project root are discovered automatically.
+**Files:** `.facts` is the default. Additional sheets use semantic names (`cli.facts`, `api.facts`). All `*.facts` files in the project root are discovered automatically. The `--file` flag accepts subdirectory paths (e.g. `--file src/api`) — subdirectory files are only visible when explicitly targeted.
 
 **Sections:** Markdown headings (`#`, `##`, etc.) create hierarchical sections addressable by path (e.g. `cli/subcommands`). Sections are created when you add to them and removed when their last fact is deleted.
 

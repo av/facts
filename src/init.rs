@@ -78,27 +78,32 @@ pub struct StackFact {
 // Entry point
 // ---------------------------------------------------------------------------
 
-pub fn run() -> Result<()> {
+pub fn run(name: Option<&str>) -> Result<()> {
     let root = project::find_project_root()?;
-    run_in(&root)
+    run_in(&root, name)
 }
 
-fn run_in(root: &Path) -> Result<()> {
-    let facts_path = root.join(".facts");
+fn run_in(root: &Path, name: Option<&str>) -> Result<()> {
+    let filename = match name {
+        Some(n) if n.ends_with(".facts") => n.to_string(),
+        Some(n) => format!("{n}.facts"),
+        None => ".facts".to_string(),
+    };
+    let facts_path = root.join(&filename);
 
     if facts_path.exists() && !facts_path.is_file() {
-        anyhow::bail!(".facts exists but is not a file");
+        anyhow::bail!("{filename} exists but is not a file");
     } else if facts_path.is_file() {
-        println!("  skip  .facts (already exists)");
+        println!("  skip  {filename} (already exists)");
     } else {
         let stacks = detect_stacks(root);
         let content = generate_facts_content(&stacks);
         std::fs::write(&facts_path, &content)?;
         if stacks.is_empty() {
-            println!("  create  .facts (no frameworks detected)");
+            println!("  create  {filename} (no frameworks detected)");
         } else {
             let names: Vec<&str> = stacks.iter().map(|s| s.name).collect();
-            println!("  create  .facts (detected: {})", names.join(", "));
+            println!("  create  {filename} (detected: {})", names.join(", "));
         }
     }
 
@@ -1087,7 +1092,7 @@ fn dep_in_requirements(content: &str, dep: &str) -> bool {
 /// Test-only entry point that skips project root detection.
 #[cfg(test)]
 pub fn run_test_init(root: &Path) -> Result<()> {
-    run_in(root)
+    run_in(root, None)
 }
 
 // ---------------------------------------------------------------------------
@@ -1726,7 +1731,7 @@ mod tests {
         std::fs::create_dir(dir.path().join(".git")).unwrap();
         std::fs::create_dir(dir.path().join(".facts")).unwrap();
 
-        let result = run_in(dir.path());
+        let result = run_in(dir.path(), None);
         assert!(result.is_err());
         let msg = result.unwrap_err().to_string();
         assert!(msg.contains("not a file"), "unexpected error: {msg}");
@@ -1738,7 +1743,7 @@ mod tests {
         std::fs::create_dir(dir.path().join(".git")).unwrap();
         std::fs::write(dir.path().join(".facts"), "- existing fact\n").unwrap();
 
-        let result = run_in(dir.path());
+        let result = run_in(dir.path(), None);
         assert!(result.is_ok());
 
         let content = std::fs::read_to_string(dir.path().join(".facts")).unwrap();
@@ -1754,7 +1759,7 @@ mod tests {
         std::fs::create_dir(dir.path().join(".git")).unwrap();
         std::fs::write(dir.path().join("Cargo.toml"), "[package]\nname=\"t\"\n").unwrap();
 
-        let result = run_in(dir.path());
+        let result = run_in(dir.path(), None);
         assert!(result.is_ok(), "init failed: {}", result.unwrap_err());
 
         assert!(dir.path().join(".facts").exists());
@@ -1780,12 +1785,46 @@ mod tests {
         std::fs::create_dir(dir.path().join(".git")).unwrap();
         std::fs::write(dir.path().join("Cargo.toml"), "[package]\n").unwrap();
 
-        assert!(run_in(dir.path()).is_ok());
+        assert!(run_in(dir.path(), None).is_ok());
         let content_first = std::fs::read_to_string(dir.path().join(".facts")).unwrap();
 
-        assert!(run_in(dir.path()).is_ok());
+        assert!(run_in(dir.path(), None).is_ok());
         let content_second = std::fs::read_to_string(dir.path().join(".facts")).unwrap();
         assert_eq!(content_first, content_second);
+    }
+
+    #[test]
+    fn test_init_with_name() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        std::fs::write(dir.path().join("Cargo.toml"), "[package]\n").unwrap();
+
+        let result = run_in(dir.path(), Some("api"));
+        assert!(result.is_ok(), "init failed: {}", result.unwrap_err());
+        assert!(dir.path().join("api.facts").exists());
+        assert!(!dir.path().join(".facts").exists());
+    }
+
+    #[test]
+    fn test_init_with_name_and_extension() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+
+        let result = run_in(dir.path(), Some("api.facts"));
+        assert!(result.is_ok());
+        assert!(dir.path().join("api.facts").exists());
+    }
+
+    #[test]
+    fn test_init_with_name_skips_existing() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        std::fs::write(dir.path().join("api.facts"), "- existing\n").unwrap();
+
+        let result = run_in(dir.path(), Some("api"));
+        assert!(result.is_ok());
+        let content = std::fs::read_to_string(dir.path().join("api.facts")).unwrap();
+        assert_eq!(content, "- existing\n");
     }
 
     #[test]

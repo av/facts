@@ -2155,7 +2155,7 @@ fn add_rejects_dotdot_file_path() {
         .args(["add", "test", "--file", "../escape.facts"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("file must be in the project root"));
+        .stderr(predicate::str::contains("must not contain '..'"));
 }
 
 #[test]
@@ -2733,23 +2733,15 @@ fn add_accepts_unique_id_across_files() {
 // ===========================================================================
 
 #[test]
-fn add_rejects_file_in_subdirectory() {
+fn add_accepts_file_in_subdirectory() {
     let dir = empty_project();
     facts_cmd(&dir)
-        .args(["add", "test", "--file", "subdir/nested"])
+        .args(["add", "test fact", "--file", "subdir/nested"])
         .assert()
-        .failure()
-        .stderr(predicate::str::contains("file must be in the project root"));
-}
+        .success();
 
-#[test]
-fn add_rejects_file_with_backslash_subdirectory() {
-    let dir = empty_project();
-    facts_cmd(&dir)
-        .args(["add", "test", "--file", "subdir\\nested"])
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("file must be in the project root"));
+    let content = fs::read_to_string(dir.path().join("subdir").join("nested.facts")).unwrap();
+    assert!(content.contains("test fact"));
 }
 
 #[test]
